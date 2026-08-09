@@ -1,0 +1,83 @@
+{
+  "_comment": "합성 샘플 데이터입니다. 실존 인물·논문이 아니며 개발/테스트 용도로만 사용합니다. 실데이터는 scripts/ 파이프라인으로 수집·검증 후 교체합니다.",
+  "collectedAt": "2026-08-09",
+  "professors": [
+    {
+      "id": "P-001",
+      "name": "김민수",
+      "profileImageUrl": null,
+      "professorType": "임상의학",
+      "department": "순환기내과",
+      "labName": null,
+      "specialties": ["심장영상", "심부전"],
+      "keywords": ["cardiac imaging", "심장 MRI", "biomarker", "heart failure"],
+      "email": "minsu.kim@jbnu.ac.kr",
+      "homepageUrl": null,
+      "papers": [
+        { "title": "Prognostic value of cardiac MRI in heart failure", "journal": "JACC", "year": 2025, "pmid": "90000001" },
+        { "title": "Biomarkers for early detection of cardiomyopathy", "journal": "Circulation", "year": 2022, "pmid": "90000002" },
+        { "title": "Deep learning applied to cardiac cine imaging", "journal": "Radiology", "year": 2021, "pmid": "90000003" }
+      ]
+    },
+    {
+      "id": "P-002",
+      "name": "이서연",
+      "profileImageUrl": null,
+      "professorType": "기초의학",
+      "department": "생리학교실",
+      "labName": "심혈관생리연구실",
+      "specialties": ["이온채널", "심근세포"],
+      "keywords": ["ion channel", "electrophysiology", "cardiomyocyte", "arrhythmia"],
+      "email": "seoyeon.lee@jbnu.ac.kr",
+      "homepageUrl": "https://med.jbnu.ac.kr/physiology",
+      "papers": [
+        { "title": "Potassium channel remodeling in atrial fibrillation models", "journal": "Cardiovascular Research", "year": 2024, "pmid": "90000004" },
+        { "title": "Calcium handling in stem-cell derived cardiomyocytes", "journal": "J Physiol", "year": 2023, "pmid": "90000005" }
+      ]
+    },
+    {
+      "id": "P-003",
+      "name": "박지훈",
+      "profileImageUrl": null,
+      "professorType": "임상의학",
+      "department": "소화기내과",
+      "labName": null,
+      "specialties": ["간질환"],
+      "keywords": ["hepatology", "liver fibrosis", "microbiome"],
+      "email": null,
+      "homepageUrl": null,
+      "papers": [
+        { "title": "Gut microbiome signatures in chronic liver disease", "journal": "Gut", "year": 2025, "pmid": "90000006" }
+      ]
+    },
+    {
+      "id": "P-004",
+      "name": "최은정",
+      "profileImageUrl": null,
+      "professorType": "의학교육학",
+      "department": "의학교육학교실",
+      "labName": null,
+      "specialties": ["교육과정개발", "임상수행평가"],
+      "keywords": ["medical education", "curriculum", "OSCE", "assessment"],
+      "email": "ej.choi@jbnu.ac.kr",
+      "homepageUrl": "https://med.jbnu.ac.kr/mededu",
+      "papers": []
+    },
+    {
+      "id": "P-005",
+      "name": "정우진",
+      "profileImageUrl": null,
+      "professorType": "인문사회의학",
+      "department": "의료인문학교실",
+      "labName": null,
+      "specialties": ["의료윤리", "의료법"],
+      "keywords": ["bioethics", "informed consent", "medical law"],
+      "email": "wj.jung@jbnu.ac.kr",
+      "homepageUrl": null,
+      "papers": [
+        { "title": "Informed consent practices in Korean tertiary hospitals", "journal": "BMC Medical Ethics", "year": 2023, "pmid": "90000007" },
+        { "title": "Legal boundaries of telemedicine in South Korea", "journal": "J Korean Med Sci", "year": 2024, "pmid": "90000008" }
+      ]
+    }
+  ]
+}
