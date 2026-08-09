@@ -17,9 +17,11 @@ function ProfessorDetailPage() {
   const { id } = useParams() // 주소 /professors/P-001 에서 "P-001" 을 꺼낸다
   const navigate = useNavigate()
 
-  // 화면 상태 3가지를 따로 관리한다
+  // 화면 상태 4가지를 따로 관리한다
   const [professor, setProfessor] = useState(null) // 불러온 교수 (없으면 null)
   const [isLoading, setIsLoading] = useState(true) // 불러오는 중인가?
+  // "교수가 없음(404)" 과 "불러오기 자체가 실패함(네트워크 오류 등)" 은 다른 상황이라 따로 구분한다
+  const [hasError, setHasError] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false) // 찜한 교수인가?
 
   // id 가 바뀔 때마다 교수 정보를 다시 불러온다
@@ -29,16 +31,33 @@ function ProfessorDetailPage() {
 
     async function load() {
       setIsLoading(true)
+      setHasError(false) // 이전 교수에서 났던 에러를 지우고 새로 시작한다
 
-      // getProfessorById 는 async 라서 await 로 결과를 기다린다
-      const found = await getProfessorById(id)
+      try {
+        // getProfessorById 는 async 라서 await 로 결과를 기다린다
+        const found = await getProfessorById(id)
 
-      if (ignore) return
-      setProfessor(found) // 없는 id 면 null 이 들어온다
+        if (ignore) return
+        setProfessor(found) // 없는 id 면 null 이 들어온다 → 미발견 화면
 
-      // 찜 여부는 백엔드가 아니라 localStorage 로 판단한다
-      setIsFavorite(getFavorites().includes(id))
-      setIsLoading(false)
+        // 찜 여부는 백엔드가 아니라 localStorage 로 판단한다
+        setIsFavorite(getFavorites().includes(id))
+      } catch (err) {
+        // 백엔드가 연결되면 없는 id 는 null 이 아니라 404 에러로 온다
+        if (ignore) return
+
+        if (err?.status === 404 || err?.code === 'not_found') {
+          // 교수가 없는 것뿐이므로 에러가 아니라 미발견으로 처리한다
+          setProfessor(null)
+        } else {
+          // 네트워크 오류 등 진짜 실패. 미발견과 구분해서 보여준다
+          setHasError(true)
+        }
+      } finally {
+        // finally 는 성공하든 에러가 나든 항상 실행된다.
+        // 그래서 예외가 나도 화면이 "불러오는 중" 에 멈추지 않는다.
+        if (!ignore) setIsLoading(false)
+      }
     }
 
     load()
@@ -64,7 +83,25 @@ function ProfessorDetailPage() {
     return <p className="detail-message">불러오는 중입니다...</p>
   }
 
-  /* ---------- 2) 없는 id ---------- */
+  /* ---------- 2) 불러오기 실패 (네트워크 오류 등) ---------- */
+  // 미발견(3번)보다 먼저 검사한다. 실패했을 때는 professor 가 null 이라
+  // 순서를 바꾸면 "교수가 없다" 는 엉뚱한 안내가 뜨기 때문이다.
+  if (hasError) {
+    return (
+      <div className="detail-message">
+        <p>정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
+        <button
+          type="button"
+          className="detail-button"
+          onClick={() => navigate(-1)}
+        >
+          ← 목록으로 돌아가기
+        </button>
+      </div>
+    )
+  }
+
+  /* ---------- 3) 없는 id ---------- */
   if (!professor) {
     return (
       <div className="detail-message">
@@ -80,7 +117,7 @@ function ProfessorDetailPage() {
     )
   }
 
-  /* ---------- 3) 정상 화면 ---------- */
+  /* ---------- 4) 정상 화면 ---------- */
 
   // 논문 중 pmid 가 있는 것만 화면에 넣는다. (계약 원칙 1)
   const papers = professor.papers.filter((paper) => paper.pmid)
