@@ -1,11 +1,11 @@
 /**
  * professorApi.js — 교수 관련 API 함수 모음 (지금은 mock 단계)
  *
- * 「데이터 계약 문서 v4」의 2. API 엔드포인트와 1:1로 대응합니다.
+ * 「데이터 계약 문서 v6」의 2. API 엔드포인트와 1:1로 대응합니다.
  *
  *   getProfessors(query, options)   API ① 교수 검색·목록 조회
  *   getProfessorById(id)            API ② 교수 상세 조회
- *   getPopularProfessors()          API ③ 우수 교수 조회
+ *   getFeaturedProfessors()         API ③ 최근 연구 활동 교수 조회
  *
  *   getFavorites() / addFavorite(id) / removeFavorite(id)
  *     → 찜하기는 백엔드 API가 없습니다. 브라우저 localStorage 만 사용합니다.
@@ -211,23 +211,24 @@ export async function getProfessorById(id) {
 }
 
 /**
- * API ③ 우수 교수 조회
+ * API ③ 최근 연구 활동 교수 조회
  *
  * 언제 쓰나: 메인(교수 검색) 페이지에 들어왔을 때
  *
- * ※ 여기서 돌려주는 목록은 '우수 교수 선정 결과'가 아닙니다.
- *   - 실제 선정 기준(최근 수상 등)은 아직 정해지지 않았습니다.
- *     (데이터 계약 문서 5장 7번 — 백엔드·데이터팀 확정 대기)
- *   - 그래서 프론트는 어떤 기준으로도 계산하지 않고,
+ * ※ 여기서 돌려주는 목록은 '최근 연구 활동 교수 선정 결과'가 아닙니다.
+ *   - 실제 선정 기준은 '최근 논문을 낸 교수'로 확정되었습니다.
+ *     (데이터 계약 문서 v6 5장 3번 — 선정 기준 확정)
+ *   - 다만 그 선정은 전부 백엔드가 수행합니다. 그래서 프론트는
+ *     최근 논문 여부를 포함해 어떤 기준으로도 계산하지 않고,
  *     data/professors.js 에 손으로 적어 둔 고정 목록
  *     MOCK_FEATURED_PROFESSOR_IDS 를 그대로 보여주기만 합니다.
  *     (화면 배치를 확인하기 위한 mock fixture)
- *   - 기준이 확정되면 이 함수 안은 fetch 호출로 바뀌고,
- *     선정은 전부 백엔드가 담당합니다.
+ *   - 백엔드가 완성되면 이 함수 안은 fetch 호출로 바뀌고,
+ *     선정 결과를 그대로 받아 표시합니다.
  *
  * @returns {Promise<{results: object[], collectedAt: string}>} 교수 카드 3~5개
  */
-export async function getPopularProfessors() {
+export async function getFeaturedProfessors() {
   await delay(MOCK_DELAY_MS)
 
   // fixture에 적힌 id 순서 그대로 찾아옵니다. (정렬·점수 계산 없음)
