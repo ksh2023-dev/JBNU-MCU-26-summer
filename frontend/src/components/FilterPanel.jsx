@@ -3,14 +3,12 @@
  *
  * 「데이터 계약 문서 v4」기준
  *   - 교수 구분(professorType)은 API ① 요청의 filters.professorType 과 같은 모양(문자열 배열)입니다.
- *   - "찜한 교수만 보기"는 백엔드 요청 없이 프론트가 localStorage 로 거르는 조건이라,
- *     체크 여부(true/false)만 부모에게 전달합니다.
  *   - 계약 3장의 "초기화 = 검색어·필터·정렬을 기본값으로 되돌림"은 페이지 전체 범위라
  *     이 컴포넌트는 클릭 사실만 알립니다.
  *   - 필터는 "선택 시 즉시 재조회"가 트리거이므로 [필터 적용] 버튼을 두지 않습니다.
  *
  * 이 컴포넌트가 "하지 않는" 일 (역할을 좁게 유지하기 위한 약속)
- *   - professorApi.js 를 import 하지 않습니다. (getProfessors / getFavorites 직접 호출 없음)
+ *   - professorApi.js 를 import 하지 않습니다. (getProfessors 직접 호출 없음)
  *   - localStorage 에 직접 접근하지 않습니다.
  *   - 페이지 이동(라우팅)을 직접 하지 않습니다.
  *   - 자기 상태를 갖지 않습니다(useState 없음). 선택 상태는 부모가 관리하고 props 로 내려줍니다.
@@ -36,15 +34,11 @@ const PROFESSOR_TYPES = ['기초의학', '임상의학', '의학교육학', '인
  * @param {string[]} props.selectedProfessorTypes  체크된 교수 구분. 빈 배열이면 전체
  * @param {(nextTypes: string[]) => void} props.onProfessorTypesChange
  *        체크박스 변경 시 "바뀐 배열 전체"를 부모에게 전달
- * @param {boolean}  props.favoritesOnly           "찜한 교수만 보기" 체크 여부
- * @param {(next: boolean) => void} props.onFavoritesOnlyChange  체크 여부만 부모에게 전달
  * @param {() => void} props.onReset               초기화 버튼 클릭을 부모에게 알림
  */
 function FilterPanel({
   selectedProfessorTypes = [],
   onProfessorTypesChange,
-  favoritesOnly = false,
-  onFavoritesOnlyChange,
   onReset,
 }) {
   /**
@@ -84,16 +78,6 @@ function FilterPanel({
           </label>
         ))}
       </div>
-
-      {/* 찜 조건은 교수 구분과 성격이 달라(백엔드 요청에 들어가지 않음) 구분선 아래에 둡니다 */}
-      <label className="filter-panel__option filter-panel__option--favorites">
-        <input
-          type="checkbox"
-          checked={favoritesOnly}
-          onChange={(event) => onFavoritesOnlyChange(event.target.checked)}
-        />
-        찜한 교수만 보기
-      </label>
 
       <p className="filter-panel__hint">필터는 선택 시 즉시 반영됩니다.</p>
     </aside>

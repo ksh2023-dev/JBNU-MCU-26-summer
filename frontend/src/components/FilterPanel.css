@@ -91,12 +91,6 @@
   cursor: pointer;
 }
 
-/* 찜 조건 — 교수 구분과 구분선으로 나눕니다 */
-.filter-panel__option--favorites {
-  padding-top: 16px;
-  border-top: 1px solid var(--fp-border);
-}
-
 /* ===== 안내 문구 ===== */
 
 .filter-panel__hint {
