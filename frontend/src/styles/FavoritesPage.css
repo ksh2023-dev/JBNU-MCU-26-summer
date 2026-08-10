@@ -1,0 +1,100 @@
+/* 찜한 교수 목록 페이지 전용 스타일 */
+
+/* 이 페이지에서 쓸 파랑 계열 색을 여기 모아둔다.
+   전역 index.css 의 --accent 는 보라색(Vite 기본 템플릿)이라, 시안의 파랑과 맞추려고
+   상세 페이지와 동일하게 이 블록 안에서만 파랑을 직접 선언한다. (다른 페이지에 영향 없음) */
+.favorites-page,
+.favorites-message,
+.favorites-empty {
+  --blue: #2563eb;
+  --blue-soft: #eff6ff;
+  --blue-border: #bfdbfe;
+}
+
+@media (prefers-color-scheme: dark) {
+  .favorites-page,
+  .favorites-message,
+  .favorites-empty {
+    --blue: #60a5fa;
+    --blue-soft: rgba(96, 165, 250, 0.12);
+    --blue-border: rgba(96, 165, 250, 0.35);
+  }
+}
+
+.favorites-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ===== 상단: 제목 + 총 인원 ===== */
+.favorites-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* 전역 h1 이 56px 라서, 상세 페이지처럼 이 페이지 제목 크기를 따로 지정한다 */
+.favorites-title {
+  font-size: 32px;
+  margin: 0;
+}
+
+.favorites-count {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--blue);
+}
+
+/* ===== 찜 카드 목록 ===== */
+.favorites-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ===== 하단 '총 N명 중 x–y명 표시' ===== */
+.favorites-range {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+/* ===== 로딩 중 / 불러오기 실패 메시지 ===== */
+.favorites-message {
+  padding: 60px 0;
+  text-align: center;
+}
+
+/* ===== 찜한 교수가 없을 때 ===== */
+.favorites-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 60px 0;
+  text-align: center;
+}
+
+/* 빈 상태의 '교수 검색하러 가기' 버튼 — 상세 페이지 버튼과 같은 결 */
+.favorites-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--blue);
+  background: transparent;
+  border: 1px solid var(--blue-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.favorites-button:hover {
+  background: var(--blue-soft);
+}

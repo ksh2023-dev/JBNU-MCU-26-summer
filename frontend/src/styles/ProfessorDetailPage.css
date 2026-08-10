@@ -1,0 +1,287 @@
+/* 교수 상세 페이지 전용 스타일 */
+
+/* 이 페이지에서 쓸 색을 여기 모아둔다 (다른 페이지에 영향을 주지 않도록 .detail-page 안에만) */
+.detail-page,
+.detail-message {
+  --blue: #2563eb;
+  --blue-soft: #eff6ff;
+  --blue-border: #bfdbfe;
+  --card-bg: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .detail-page,
+  .detail-message {
+    --blue: #60a5fa;
+    --blue-soft: rgba(96, 165, 250, 0.12);
+    --blue-border: rgba(96, 165, 250, 0.35);
+  }
+}
+
+.detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 로딩 중 / 교수를 못 찾았을 때 */
+.detail-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 60px 0;
+  text-align: center;
+}
+
+/* ===== 상단 제목 줄 ===== */
+.detail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.detail-title {
+  font-size: 32px;
+  margin: 0;
+}
+
+/* ===== 공통 카드 상자 ===== */
+.detail-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--card-bg);
+}
+
+.detail-section-title {
+  font-size: 18px;
+  color: var(--text-h);
+  margin: 0 0 14px;
+}
+
+/* 값이 없을 때 보여주는 문구는 흐리게 */
+.detail-empty {
+  color: var(--text);
+  opacity: 0.7;
+  font-size: 15px;
+}
+
+/* ===== 버튼 / 링크 버튼 ===== */
+.detail-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-h);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.detail-button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+/* 찜하기 버튼 */
+.detail-favorite {
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--blue);
+  background: transparent;
+  border: 1px solid var(--blue-border);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 이미 찜한 상태 */
+.detail-favorite.is-active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+/* ===== 프로필 카드 ===== */
+.detail-profile {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.detail-avatar {
+  width: 140px;
+  height: 170px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+/* 사진이 없을 때의 이니셜 아바타 */
+.detail-avatar--initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.detail-profile__right {
+  flex: 1;
+  min-width: 260px;
+}
+
+.detail-nameline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail-name {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0;
+}
+
+/* 교수 구분 배지 */
+.detail-badge {
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--code-bg);
+  border-radius: 999px;
+}
+
+.detail-department {
+  margin: 8px 0 16px;
+  font-size: 17px;
+  color: var(--blue);
+  font-weight: 500;
+}
+
+/* 연구실 / 이메일 / 홈페이지 목록 */
+.detail-info {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.detail-info dt {
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.detail-info dd {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.detail-info a {
+  color: var(--blue);
+}
+
+/* ===== 연구 분야 + 연구 키워드 (2단) ===== */
+.detail-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 800px) {
+  .detail-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detail-specialties {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 15px;
+  line-height: 190%;
+  color: var(--text-h);
+}
+
+/* 키워드 알약 태그 */
+.detail-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-pill {
+  padding: 6px 12px;
+  font-size: 14px;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: 1px solid var(--blue-border);
+  border-radius: 999px;
+}
+
+/* ===== 대표 논문 ===== */
+.detail-papers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-paper {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.detail-paper:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* 논문 번호 */
+.detail-paper__no {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--blue);
+  border-radius: 6px;
+}
+
+.detail-paper__body {
+  flex: 1;
+  min-width: 200px;
+}
+
+.detail-paper__title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-h);
+  margin-bottom: 6px;
+}
+
+.detail-paper__meta {
+  font-size: 14px;
+  opacity: 0.8;
+}

@@ -1,0 +1,114 @@
+/**
+ * SearchBar.css — 검색어 입력창 전용 스타일
+ *
+ * 규칙 (ProfessorCard.css 와 동일)
+ *   - 이 파일의 선택자는 전부 .search-bar 안쪽만 건드립니다.
+ *   - 색/여백 값은 .search-bar 안에서만 쓰는 변수로 선언합니다.
+ *     전역 index.css 가 아직 Vite 기본 템플릿이라 그대로 물려받으면 시안과 달라집니다.
+ *   - 폭과 위치는 정하지 않습니다. 메인/검색 결과의 폭 차이는 부모가 정합니다.
+ */
+
+.search-bar {
+  --sb-primary: #2563eb;
+  --sb-primary-dark: #1d4ed8;
+  --sb-border: #d1d5db;
+  --sb-surface: #ffffff;
+  --sb-text-strong: #111827;
+  --sb-text-muted: #6b7280;
+
+  box-sizing: border-box;
+  color: var(--sb-text-muted);
+  font-family: system-ui, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left; /* 전역 #root 의 text-align: center 를 물려받지 않도록 */
+}
+
+.search-bar *,
+.search-bar *::before,
+.search-bar *::after {
+  box-sizing: border-box;
+}
+
+/* 입력창 + 버튼을 한 줄로 붙여 놓은 형태 */
+.search-bar__form {
+  display: flex;
+  border: 1px solid var(--sb-border);
+  border-radius: 10px;
+  background: var(--sb-surface);
+  overflow: hidden; /* 안쪽 모서리가 바깥 radius 를 넘지 않도록 */
+}
+
+.search-bar__form:focus-within {
+  border-color: var(--sb-primary);
+}
+
+/* 돋보기 아이콘 + 입력칸 */
+.search-bar__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0; /* 긴 입력값이 버튼을 밀어내지 않도록 */
+  padding: 0 14px;
+  color: var(--sb-text-muted);
+}
+
+.search-bar__input {
+  flex: 1;
+  min-width: 0;
+  padding: 15px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--sb-text-strong);
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.search-bar__input::placeholder {
+  color: var(--sb-text-muted);
+}
+
+.search-bar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  padding: 0 26px;
+  border: none;
+  background: var(--sb-primary);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-bar__button:hover {
+  background: var(--sb-primary-dark);
+}
+
+.search-bar__button:focus-visible {
+  outline: 2px solid var(--sb-primary-dark);
+  outline-offset: -4px;
+}
+
+.search-bar__icon {
+  flex: none;
+}
+
+/* 부모가 hintText 를 넘겼을 때만 렌더되는 보조 문구 */
+.search-bar__hint {
+  margin: 10px 0 0;
+  color: var(--sb-text-muted);
+  font-size: 13px;
+}
+
+/* 좁은 화면 — 버튼 글자를 줄이지 않고 좌우 여백만 줄입니다. */
+@media (max-width: 640px) {
+  .search-bar__button {
+    padding: 0 16px;
+  }
+}
