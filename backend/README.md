@@ -30,7 +30,7 @@ pytest
 |---|---|---|
 | API ① 검색·목록 | `POST /api/professors/search` (단일 JSON 본문) | `getProfessors(query, filters)` |
 | API ② 상세 | `GET /api/professors/{id}` — 없으면 404 + `{"error":"not_found"}` | `getProfessorById(id)` |
-| API ③ 우수 교수 | `GET /api/professors/featured` | `getFeaturedProfessors()` |
+| API ③ 최근 활동 교수 | `GET /api/professors/featured` | `getFeaturedProfessors()` |
 
 찜하기 관련 API는 계약대로 **없음** (프론트 localStorage 소관).
 
