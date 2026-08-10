@@ -294,6 +294,31 @@ export function removeFavorite(id) {
   return updated
 }
 
+/**
+ * 찜한 교수들의 카드 객체를 가져옵니다.
+ * getFavorites()로 얻은 id 목록을 카드 데이터로 바꿔 돌려줍니다.
+ * 지금은 mock 배열에서 찾고, 백엔드가 생기면 이 안쪽만 fetch로 바꾸면 됩니다.
+ * (그래서 지금부터 async 입니다)
+ *
+ * @returns {Promise<{results: object[], total: number, collectedAt: string}>}
+ */
+export async function getFavoriteProfessors() {
+  await delay(MOCK_DELAY_MS)
+
+  const favoriteIds = getFavorites() // localStorage의 id 배열 (sync)
+
+  const results = favoriteIds
+    .map((id) => professors.find((professor) => professor.id === id))
+    .filter(Boolean) // 데이터에서 사라진 교수는 조용히 제외 (지어내지 않음)
+    .map(cloneProfessor) // 원본 mock 오염 방지용 복사
+
+  return {
+    results,
+    total: results.length,
+    collectedAt: MOCK_COLLECTED_AT,
+  }
+}
+
 /** 찜 목록을 localStorage 에 저장합니다. (이 파일 안에서만 사용) */
 function saveFavorites(ids) {
   try {
