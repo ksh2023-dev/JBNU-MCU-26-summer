@@ -1,0 +1,103 @@
+/* 검색 결과 페이지 전용 스타일 */
+
+/* 이 페이지에서 쓸 파랑 계열 색을 여기 모아둔다.
+   전역 index.css 의 --accent 는 보라색(Vite 기본 템플릿)이라, 시안의 파랑과 맞추려고
+   메인·찜 목록·상세 페이지와 동일하게 이 블록 안에서만 파랑을 직접 선언한다.
+   선택자를 전부 .search-page 안쪽으로 한정해 다른 화면에 영향이 없게 한다. */
+.search-page {
+  --blue: #2563eb;
+  --search-text-strong: #111827;
+  --search-text-muted: #6b7280;
+
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* 전역 #root 의 text-align: center 를 물려받지 않도록 */
+  text-align: left;
+  font-family: system-ui, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .search-page {
+    --blue: #60a5fa;
+    --search-text-strong: #f3f4f6;
+    --search-text-muted: #9ca3af;
+  }
+}
+
+/* ==================================================================
+ * 본문 2단 배치 — 왼쪽 필터 패널 / 오른쪽 검색 결과
+ * ================================================================== */
+
+.search-page__layout {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  gap: 24px;
+  /* 필터 패널이 결과 목록 높이만큼 늘어나지 않도록 */
+  align-items: start;
+}
+
+.search-page__results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0; /* 긴 카드 내용이 그리드 칸을 밀어내지 않도록 */
+}
+
+/* ===== 결과 수 + 정렬 표시 ===== */
+
+.search-page__summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.search-page__count {
+  color: var(--search-text-strong);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* MVP 정렬은 관련도순 고정이라 고르는 UI 없이 현재 기준만 알려준다 */
+.search-page__sort {
+  color: var(--search-text-muted);
+  font-size: 14px;
+}
+
+/* ===== 교수 카드 목록 ===== */
+
+.search-page__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ===== 불러오는 중 / 실패 / 검색 결과 없음 ===== */
+
+.search-page__message {
+  padding: 60px 0;
+  text-align: center;
+  font-size: 15px;
+}
+
+/* ===== 하단 '총 N명 중 x–y명 표시' ===== */
+
+.search-page__range {
+  text-align: center;
+  font-size: 14px;
+  color: var(--search-text-muted);
+}
+
+/* ==================================================================
+ * 좁은 화면 — 필터 패널을 검색 결과 위로 올려 1단으로 접는다.
+ * ================================================================== */
+
+@media (max-width: 900px) {
+  .search-page__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
