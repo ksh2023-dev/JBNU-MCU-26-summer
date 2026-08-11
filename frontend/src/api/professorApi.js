@@ -100,6 +100,13 @@ function matchesQuery(professor, query) {
  * @param {object} options  검색 조건 (계약 요청 JSON에서 query 를 뺀 나머지)
  *   @param {object}   options.filters                필터 묶음
  *   @param {string[]} options.filters.professorType  교수 구분 필터. 빈 배열이면 전체
+ *   @param {string[]|null} options.filters.favoriteIds  "찜한 교수만 보기" 필터.
+ *     계약 API ①에 따라 세 가지 상태를 구분합니다.
+ *       null / 없음        필터 꺼짐 — 찜과 무관하게 전체 검색
+ *       []  (빈 배열)      필터는 켰지만 찜한 교수가 0명 → results: [], total: 0
+ *       ['P-001', ...]     이 id 들과 교집합(AND)
+ *     프론트가 현재 페이지의 5명을 다시 거르지 않고, 여기서 교집합을 건 뒤에
+ *     페이지를 자릅니다. 그래야 total 이 찜 필터까지 반영된 값이 됩니다.
  *   @param {string}   options.sort                   정렬 방식. MVP는 'relevance'(관련도순)만
  *   @param {number}   options.minScore               이 값 미만인 교수는 제외
  *   @param {number}   options.page                   몇 번째 페이지인지 (1부터 시작)
@@ -119,12 +126,16 @@ export async function getProfessors(query = '', options = {}) {
     page = 1,
     pageSize = DEFAULT_PAGE_SIZE,
   } = options
-  const { professorType = [] } = filters
+  const { professorType = [], favoriteIds = null } = filters
 
   // 백엔드가 생기면 아래 requestBody 를 그대로 요청 본문으로 보내면 됩니다.
   // (계약 문서 API ①의 요청 모양과 동일)
   //
-  // const requestBody = { query, filters: { professorType }, sort, minScore, page, pageSize }
+  // const requestBody = {
+  //   query,
+  //   filters: { professorType, favoriteIds },
+  //   sort, minScore, page, pageSize,
+  // }
   // const response = await fetch('/api/professors', {
   //   method: 'POST',
   //   headers: { 'Content-Type': 'application/json' },
@@ -137,6 +148,10 @@ export async function getProfessors(query = '', options = {}) {
   // 1) 관련도 임계값 미만 제외 (계약 원칙 3)
   // 2) 교수 구분 필터
   // 3) 검색어 매칭
+  // 4) 찜 목록 교집합 ("찜한 교수만 보기")
+  //    1~4는 모두 AND 조건이라 거는 순서는 결과에 영향을 주지 않습니다.
+  //    중요한 것은 이 네 가지를 전부 건 "뒤에" 페이지를 자른다는 점입니다.
+  //    (그래야 total 이 찜 필터까지 반영된 최종 수가 됩니다 — 계약 API ①)
   const filtered = professors
     .filter((professor) => professor.matchScore >= minScore)
     .filter(
@@ -145,14 +160,20 @@ export async function getProfessors(query = '', options = {}) {
         professorType.includes(professor.professorType),
     )
     .filter((professor) => matchesQuery(professor, query))
+    .filter(
+      (professor) =>
+        // 배열이 아니면(null·미전달) 필터가 꺼진 상태 → 전부 통과
+        // 빈 배열이면 includes 가 항상 false → 전부 제외 → results: [], total: 0
+        !Array.isArray(favoriteIds) || favoriteIds.includes(professor.id),
+    )
 
-  // 4) 정렬 — MVP는 관련도순(matchScore 높은 순)만 사용
+  // 5) 정렬 — MVP는 관련도순(matchScore 높은 순)만 사용
   const sorted = [...filtered]
   if (sort === 'relevance') {
     sorted.sort((a, b) => b.matchScore - a.matchScore)
   }
 
-  // 5) 페이지 자르기 — 예: page 2, pageSize 5 → 6번째부터 10번째까지
+  // 6) 페이지 자르기 — 예: page 2, pageSize 5 → 6번째부터 10번째까지
   const startIndex = (page - 1) * pageSize
   const pageItems = sorted.slice(startIndex, startIndex + pageSize)
 
