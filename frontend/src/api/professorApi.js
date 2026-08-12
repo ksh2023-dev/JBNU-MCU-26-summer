@@ -1,7 +1,7 @@
 /**
- * professorApi.js — 교수 관련 API 함수 모음 (지금은 mock 단계)
+ * professorApi.js — 교수 관련 API 함수 모음 (API ①·③ 백엔드 연결, API ② 는 아직 mock)
  *
- * 「데이터 계약 문서 v6」의 2. API 엔드포인트와 1:1로 대응합니다.
+ * 「데이터 계약 문서 v6.2」의 2. API 엔드포인트와 1:1로 대응합니다.
  *
  *   getProfessors(query, options)   API ① 교수 검색·목록 조회
  *   getProfessorById(id)            API ② 교수 상세 조회
@@ -11,8 +11,9 @@
  *     → 찜하기는 백엔드 API가 없습니다. 브라우저 localStorage 만 사용합니다.
  *
  * 연결 현황
+ *   getProfessors()          실제 백엔드 호출 (POST /api/professors/search)
  *   getFeaturedProfessors()  실제 백엔드 호출 (GET /api/professors/featured)
- *   getProfessors() · getProfessorById()  아직 data/professors.js 의 가짜 데이터
+ *   getProfessorById()       아직 data/professors.js 의 가짜 데이터
  *
  * 함수 이름·인자·돌려주는 값의 모양을 계약대로 맞춰 두었기 때문에,
  * "이 파일 안쪽만" fetch 호출로 바꾸면 되고
@@ -27,7 +28,13 @@ import { professors, MOCK_COLLECTED_AT } from '../data/professors.js'
 /** 한 페이지에 보여줄 교수 수 (계약: 5명씩) */
 export const DEFAULT_PAGE_SIZE = 5
 
-/** 기본 관련도 임계값. 이 값보다 낮은 교수는 결과에서 제외 (계약 원칙 3) */
+/**
+ * 기본 관련도 임계값. 이 값보다 낮은 교수는 백엔드가 결과에서 제외합니다 (계약 원칙 3).
+ * 계약 v6.2 기준 개발용 임시값이며, 최종 threshold 는 matchScore 산식과 함께 정해집니다.
+ *
+ * 빈 검색어(전체 조회)에서는 백엔드가 이 값을 적용하지 않습니다 (v6.2 browse 정책).
+ * 그때도 프론트는 값을 그대로 실어 보내면 되고, 백엔드가 무시합니다.
+ */
 export const DEFAULT_MIN_SCORE = 0.3
 
 /** 찜한 교수 id 배열을 저장할 localStorage 키 */
@@ -89,38 +96,12 @@ function cloneProfessor(professor) {
 }
 
 /**
- * [임시 구현 · UI 테스트 전용] 검색어가 교수 정보에 포함되는지 확인합니다.
- *
- * ※ 이것은 확정된 검색 규칙이 아닙니다.
- *   - query 가 실제로 어디까지 매칭되는지(교수명·전문분야·키워드·논문제목·초록)는
- *     아직 정해지지 않았습니다. (데이터 계약 문서 5장 2번 — 백엔드·검색엔진팀 확정 대기)
- *   - 아래에서 이름/소속/전문분야/키워드를 훑는 것은, 검색 화면이 동작하는지
- *     눈으로 확인하기 위해 임시로 정한 동작일 뿐입니다.
- *   - 실제 검색은 전부 백엔드가 수행하므로, 기준이 확정되면 이 함수는
- *     프론트에서 통째로 사라지고 fetch 결과를 그대로 받게 됩니다.
- *   - 따라서 페이지/컴포넌트 코드가 이 매칭 방식에 의존하면 안 됩니다.
- */
-function matchesQuery(professor, query) {
-  const keyword = query.trim().toLowerCase()
-  if (keyword === '') return true // 검색어가 없으면 전체 대상
-
-  const searchTargets = [
-    professor.name,
-    professor.department,
-    ...professor.specialties,
-    ...professor.keywords,
-  ]
-
-  return searchTargets.some((text) => text.toLowerCase().includes(keyword))
-}
-
-/**
- * API ① 교수 검색·목록 조회
+ * API ① 교수 검색·목록 조회 — 실제 백엔드 연결 완료
  *
  * 언제 쓰나: 검색 버튼/Enter, 필터 선택, 페이지 번호 클릭
  *
- * 인자 모양은 계약 문서 API ①의 요청 JSON과 똑같이 맞췄습니다.
- * 그래서 나중에 fetch 로 바꿀 때 받은 인자를 그대로 body 로 보내면 됩니다.
+ * 요청: POST /api/professors/search (계약 v6.2 확정 경로)
+ *       받은 인자를 계약 API ①의 요청 JSON 모양 그대로 본문에 담아 보냅니다.
  *
  *   getProfessors('심장', {
  *     filters: { professorType: ['임상의학'] },
@@ -129,6 +110,16 @@ function matchesQuery(professor, query) {
  *     page: 1,
  *     pageSize: 5,
  *   })
+ *
+ * 검색·점수·정렬·페이지네이션은 전부 백엔드가 수행합니다 (계약 v6.2 API ①).
+ *   - query 는 교수명·keywords·specialties·논문 제목·논문 초록·소속에서 부분일치
+ *   - query 있음: matchScore 내림차순, 동점이면 이름 오름차순, minScore 미만 제외
+ *   - query 없음: 전체 목록 조회(browse) — matchScore 는 null, minScore 미적용,
+ *     이름 오름차순. 이때 matchScore: null 은 누락이 아니라 정상입니다 (원칙 2)
+ *   - 찜 필터·교수 구분 필터를 모두 건 "뒤에" 페이지를 자르고, total 도 그 최종 수입니다
+ *
+ * 그래서 이 함수는 응답을 가공하지 않고 그대로 돌려줍니다.
+ * 프론트에서 다시 거르거나 정렬하거나 자르지 않습니다.
  *
  * @param {string} query    검색어 (예: '심장'). 없으면 전체 조회
  * @param {object} options  검색 조건 (계약 요청 JSON에서 query 를 뺀 나머지)
@@ -139,7 +130,7 @@ function matchesQuery(professor, query) {
  *       null / 없음        필터 꺼짐 — 찜과 무관하게 전체 검색
  *       []  (빈 배열)      필터는 켰지만 찜한 교수가 0명 → results: [], total: 0
  *       ['P-001', ...]     이 id 들과 교집합(AND)
- *     프론트가 현재 페이지의 5명을 다시 거르지 않고, 여기서 교집합을 건 뒤에
+ *     프론트가 현재 페이지의 5명을 다시 거르지 않고, 백엔드가 교집합을 건 뒤에
  *     페이지를 자릅니다. 그래야 total 이 찜 필터까지 반영된 값이 됩니다.
  *   @param {string}   options.sort                   정렬 방식. MVP는 'relevance'(관련도순)만
  *   @param {number}   options.minScore               이 값 미만인 교수는 제외
@@ -149,8 +140,11 @@ function matchesQuery(professor, query) {
  * @returns {Promise<{results: object[], total: number, page: number,
  *                    pageSize: number, collectedAt: string}>}
  *   results     현재 페이지에 보여줄 교수 카드 배열
- *   total       조건에 맞는 전체 교수 수 (페이지 수 계산에 사용)
- *   collectedAt 데이터 수집 기준일
+ *   total       조건에 맞는 전체 교수 수 (페이지 수 계산에 사용). 페이지를 자르기 "전" 값
+ *   page        요청한 page 를 그대로 되돌려줍니다
+ *   pageSize    요청한 pageSize 를 그대로 되돌려줍니다
+ *   collectedAt 데이터 수집 기준일 ('YYYY-MM-DD')
+ * @throws {Error} HTTP 오류·네트워크 오류. 호출하는 페이지가 오류 화면으로 갈라집니다
  */
 export async function getProfessors(query = '', options = {}) {
   const {
@@ -162,62 +156,27 @@ export async function getProfessors(query = '', options = {}) {
   } = options
   const { professorType = [], favoriteIds = null } = filters
 
-  // 백엔드가 생기면 아래 requestBody 를 그대로 요청 본문으로 보내면 됩니다.
-  // (계약 문서 API ①의 요청 모양과 동일)
+  // 계약 API ①의 요청 JSON 과 같은 모양으로 조립합니다.
   //
-  // const requestBody = {
-  //   query,
-  //   filters: { professorType, favoriteIds },
-  //   sort, minScore, page, pageSize,
-  // }
-  // const response = await fetch('/api/professors', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(requestBody),
-  // })
-  // return response.json()
-
-  await delay(MOCK_DELAY_MS)
-
-  // 1) 관련도 임계값 미만 제외 (계약 원칙 3)
-  // 2) 교수 구분 필터
-  // 3) 검색어 매칭
-  // 4) 찜 목록 교집합 ("찜한 교수만 보기")
-  //    1~4는 모두 AND 조건이라 거는 순서는 결과에 영향을 주지 않습니다.
-  //    중요한 것은 이 네 가지를 전부 건 "뒤에" 페이지를 자른다는 점입니다.
-  //    (그래야 total 이 찜 필터까지 반영된 최종 수가 됩니다 — 계약 API ①)
-  const filtered = professors
-    .filter((professor) => professor.matchScore >= minScore)
-    .filter(
-      (professor) =>
-        professorType.length === 0 ||
-        professorType.includes(professor.professorType),
-    )
-    .filter((professor) => matchesQuery(professor, query))
-    .filter(
-      (professor) =>
-        // 배열이 아니면(null·미전달) 필터가 꺼진 상태 → 전부 통과
-        // 빈 배열이면 includes 가 항상 false → 전부 제외 → results: [], total: 0
-        !Array.isArray(favoriteIds) || favoriteIds.includes(professor.id),
-    )
-
-  // 5) 정렬 — MVP는 관련도순(matchScore 높은 순)만 사용
-  const sorted = [...filtered]
-  if (sort === 'relevance') {
-    sorted.sort((a, b) => b.matchScore - a.matchScore)
-  }
-
-  // 6) 페이지 자르기 — 예: page 2, pageSize 5 → 6번째부터 10번째까지
-  const startIndex = (page - 1) * pageSize
-  const pageItems = sorted.slice(startIndex, startIndex + pageSize)
-
-  return {
-    results: pageItems.map(cloneProfessor),
-    total: sorted.length, // 페이지를 자르기 "전" 전체 개수
+  // favoriteIds 는 null 과 [] 를 반드시 구분해 보냅니다. JSON.stringify 는 null 을
+  // 그대로 남기고, 백엔드는 null·없음을 "찜 필터 꺼짐"으로 받습니다.
+  //   null      필터 꺼짐 — 찜과 무관하게 전체 검색
+  //   []        필터는 켰지만 찜한 교수가 0명 → results: [], total: 0
+  //   [id...]   이 id 들과 교집합(AND)
+  const requestBody = {
+    query,
+    filters: { professorType, favoriteIds },
+    sort,
+    minScore,
     page,
     pageSize,
-    collectedAt: MOCK_COLLECTED_AT,
   }
+
+  return request('/professors/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  })
 }
 
 /**
