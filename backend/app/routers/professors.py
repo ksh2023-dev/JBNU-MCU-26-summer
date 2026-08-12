@@ -18,11 +18,10 @@ def search_professors(req: SearchRequest, store: Store = Depends(get_store)):
 # 주의: /{professor_id}보다 먼저 등록해야 "featured"가 id로 해석되지 않는다
 @router.get("/featured", response_model=FeaturedResponse, response_model_by_alias=True)
 def featured_professors(store: Store = Depends(get_store)):
-    """API ③ 우수 교수 조회 — 선정 기준 확정 전까지 config의 수동 큐레이션."""
+    """API ③ 최근 연구 활동 교수 — 최근 논문 발행일 내림차순 상위 FEATURED_COUNT명 (v6)."""
     cards = [
         search_service._to_card(p, None)
-        for pid in config.FEATURED_IDS
-        if (p := store.get(pid)) is not None
+        for p in store.recently_active(config.FEATURED_COUNT)
     ]
     return FeaturedResponse(results=cards, collected_at=store.collected_at)
 

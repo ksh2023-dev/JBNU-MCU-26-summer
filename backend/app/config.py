@@ -9,7 +9,7 @@ DATA_FILE = Path(os.getenv("DATA_FILE", PROJECT_ROOT / "data" / "sample" / "prof
 
 DEFAULT_MIN_SCORE = float(os.getenv("DEFAULT_MIN_SCORE", "0.3"))
 
-# API ③ 우수 교수 — 선정 기준(수상 등) 확정 전까지 수동 큐레이션 (계약 5장 7번)
-FEATURED_IDS = [s for s in os.getenv("FEATURED_IDS", "P-001,P-002,P-005").split(",") if s]
+# API ③ 최근 연구 활동 교수 — 최근 논문 발행일 기준 상위 N명 (v6 계약: 카드 3~5개)
+FEATURED_COUNT = int(os.getenv("FEATURED_COUNT", "3"))
 
 CORS_ORIGINS = [s for s in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if s]

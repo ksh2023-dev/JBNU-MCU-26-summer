@@ -53,8 +53,28 @@ class ProfessorDetail(ContractModel):
     papers: list[Paper] = []
 
 
+class LatestPaper(ContractModel):
+    """가장 최근 논문의 식별자와 발행 시점 — API ③ 정렬 근거."""
+
+    pmid: str
+    published_at: str  # ISO 날짜 (YYYY-MM-DD)
+
+
+class ProfessorRecord(ProfessorDetail):
+    """저장용 레코드 = 상세(1-2) + 내부 필드.
+
+    계약 응답 모양이 아니다 — latestPaper는 응답에 나가면 안 되며,
+    라우터의 response_model(ProfessorDetail/ProfessorCard)이 걸러낸다.
+    """
+
+    latest_paper: LatestPaper | None = None
+
+
 class SearchFilters(ContractModel):
     professor_type: list[ProfessorType] = []
+    # v6: "찜한 교수만 보기" — None=필터 꺼짐(전체 검색), []=찜 0명(결과 없음),
+    # ["P-001", ...]=이 id들과 교집합(AND). None과 []의 구분이 계약의 핵심.
+    favorite_ids: list[str] | None = None
 
 
 class SearchRequest(ContractModel):

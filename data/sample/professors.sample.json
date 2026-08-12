@@ -1,5 +1,5 @@
 {
-  "_comment": "합성 샘플 데이터입니다. 실존 인물·논문이 아니며 개발/테스트 용도로만 사용합니다. 실데이터는 scripts/ 파이프라인으로 수집·검증 후 교체합니다.",
+  "_comment": "합성 샘플 데이터입니다. 실존 인물·논문이 아니며 개발/테스트 용도로만 사용합니다. 실데이터는 scripts/ 파이프라인으로 수집·검증 후 교체합니다. latestPaper는 내부 필드(API ③ 정렬용)로, 계약 응답에는 나가지 않습니다.",
   "collectedAt": "2026-08-09",
   "professors": [
     {
@@ -13,6 +13,7 @@
       "keywords": ["cardiac imaging", "심장 MRI", "biomarker", "heart failure"],
       "email": "minsu.kim@jbnu.ac.kr",
       "homepageUrl": null,
+      "latestPaper": { "pmid": "90000001", "publishedAt": "2025-11-03" },
       "papers": [
         { "title": "Prognostic value of cardiac MRI in heart failure", "journal": "JACC", "year": 2025, "pmid": "90000001" },
         { "title": "Biomarkers for early detection of cardiomyopathy", "journal": "Circulation", "year": 2022, "pmid": "90000002" },
@@ -30,6 +31,7 @@
       "keywords": ["ion channel", "electrophysiology", "cardiomyocyte", "arrhythmia"],
       "email": "seoyeon.lee@jbnu.ac.kr",
       "homepageUrl": "https://med.jbnu.ac.kr/physiology",
+      "latestPaper": { "pmid": "90000004", "publishedAt": "2024-09-15" },
       "papers": [
         { "title": "Potassium channel remodeling in atrial fibrillation models", "journal": "Cardiovascular Research", "year": 2024, "pmid": "90000004" },
         { "title": "Calcium handling in stem-cell derived cardiomyocytes", "journal": "J Physiol", "year": 2023, "pmid": "90000005" }
@@ -46,6 +48,7 @@
       "keywords": ["hepatology", "liver fibrosis", "microbiome"],
       "email": null,
       "homepageUrl": null,
+      "latestPaper": { "pmid": "90000006", "publishedAt": "2025-04-18" },
       "papers": [
         { "title": "Gut microbiome signatures in chronic liver disease", "journal": "Gut", "year": 2025, "pmid": "90000006" }
       ]
@@ -61,6 +64,7 @@
       "keywords": ["medical education", "curriculum", "OSCE", "assessment"],
       "email": "ej.choi@jbnu.ac.kr",
       "homepageUrl": "https://med.jbnu.ac.kr/mededu",
+      "latestPaper": null,
       "papers": []
     },
     {
@@ -74,6 +78,7 @@
       "keywords": ["bioethics", "informed consent", "medical law"],
       "email": "wj.jung@jbnu.ac.kr",
       "homepageUrl": null,
+      "latestPaper": { "pmid": "90000008", "publishedAt": "2024-11-30" },
       "papers": [
         { "title": "Informed consent practices in Korean tertiary hospitals", "journal": "BMC Medical Ethics", "year": 2023, "pmid": "90000007" },
         { "title": "Legal boundaries of telemedicine in South Korea", "journal": "J Korean Med Sci", "year": 2024, "pmid": "90000008" }

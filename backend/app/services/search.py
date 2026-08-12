@@ -55,6 +55,10 @@ def search(store: Store, req: SearchRequest) -> SearchResponse:
     pool = store.professors
     if req.filters.professor_type:
         pool = [p for p in pool if p.professor_type in req.filters.professor_type]
+    if req.filters.favorite_ids is not None:
+        # 교집합(AND) — 빈 배열이면 pool도 비어 results: [], total: 0이 된다 (v6 계약)
+        favorite_ids = set(req.filters.favorite_ids)
+        pool = [p for p in pool if p.id in favorite_ids]
 
     tokens = req.query.lower().split()
     if tokens:

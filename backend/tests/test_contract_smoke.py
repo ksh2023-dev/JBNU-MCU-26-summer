@@ -49,6 +49,45 @@ def test_no_results_is_empty_not_error():
     assert res.json()["total"] == 0
 
 
+def test_favorite_ids_absent_means_no_filter():
+    # favoriteIds 없음/null = "찜한 교수만 보기" 꺼짐 → 전체 검색
+    res = client.post("/api/professors/search", json={"query": "", "filters": {}})
+    assert res.json()["total"] == 5
+
+
+def test_favorite_ids_empty_means_zero_results():
+    # favoriteIds: [] = 필터는 켰지만 찜 0명 → results: [], total: 0
+    res = client.post("/api/professors/search", json={"query": "", "filters": {"favoriteIds": []}})
+    body = res.json()
+    assert body["results"] == []
+    assert body["total"] == 0
+
+
+def test_favorite_ids_intersect_with_query_and_type():
+    # 교집합(AND): query ∩ professorType ∩ favoriteIds
+    res = client.post(
+        "/api/professors/search",
+        json={
+            "query": "심장",
+            "filters": {"professorType": ["임상의학"], "favoriteIds": ["P-001", "P-003", "P-999"]},
+        },
+    )
+    body = res.json()
+    assert [c["id"] for c in body["results"]] == ["P-001"]
+    assert body["total"] == 1
+
+
+def test_favorite_ids_total_reflects_filter_for_pagination():
+    # total은 찜 필터까지 반영된 수여야 프론트 페이지 계산이 맞는다
+    res = client.post(
+        "/api/professors/search",
+        json={"query": "", "filters": {"favoriteIds": ["P-001", "P-002", "P-004"]}, "pageSize": 2},
+    )
+    body = res.json()
+    assert body["total"] == 3
+    assert len(body["results"]) == 2
+
+
 def test_pagination_total_consistent():
     p1 = client.post("/api/professors/search", json={"query": "", "page": 1, "pageSize": 2}).json()
     p2 = client.post("/api/professors/search", json={"query": "", "page": 2, "pageSize": 2}).json()
@@ -80,9 +119,14 @@ def test_detail_404_contract():
     assert res.json() == {"error": "not_found"}
 
 
-def test_featured():
+def test_featured_recent_papers_descending():
     res = client.get("/api/professors/featured")
     assert res.status_code == 200
     body = res.json()
     assert set(body) == {"results", "collectedAt"}
-    assert 3 <= len(body["results"]) <= 5
+    assert 3 <= len(body["results"]) <= 5  # v6 계약: 카드 3~5개
+    # 최근 논문 발행일 내림차순: P-001(2025-11) > P-003(2025-04) > P-005(2024-11)
+    # P-004는 latestPaper가 없으므로 후보 제외
+    assert [c["id"] for c in body["results"]] == ["P-001", "P-003", "P-005"]
+    # latestPaper는 내부 필드 — 카드 응답에 새어 나가면 안 된다
+    assert all(set(c) == CARD_FIELDS for c in body["results"])
