@@ -59,6 +59,12 @@ def test_favorite_ids_absent_means_no_filter():
     assert res.json()["total"] == 5
 
 
+def test_favorite_ids_explicit_null_means_no_filter():
+    # v6 계약: favoriteIds 없음/null 은 동일하게 "필터 꺼짐" — null도 명시적으로 검증
+    res = client.post("/api/professors/search", json={"query": "", "filters": {"favoriteIds": None}})
+    assert res.json()["total"] == 5
+
+
 def test_favorite_ids_empty_means_zero_results():
     # favoriteIds: [] = 필터는 켰지만 찜 0명 → results: [], total: 0
     res = client.post("/api/professors/search", json={"query": "", "filters": {"favoriteIds": []}})
@@ -134,3 +140,17 @@ def test_featured_recent_papers_descending():
     assert [c["id"] for c in body["results"]] == ["P-001", "P-003", "P-005"]
     # latestPaper는 내부 필드 — 카드 응답에 새어 나가면 안 된다
     assert all(set(c) == CARD_FIELDS for c in body["results"])
+
+
+def test_featured_count_configurable(monkeypatch):
+    # FEATURED_COUNT(환경변수 → config)를 바꾸면 카드 수가 따라간다
+    from app import config
+
+    monkeypatch.setattr(config, "FEATURED_COUNT", 2)
+    res = client.get("/api/professors/featured")
+    assert [c["id"] for c in res.json()["results"]] == ["P-001", "P-003"]
+
+    # 후보(latestPaper 보유 4명)보다 크게 잡으면 있는 만큼만 반환 — 억지로 채우지 않는다
+    monkeypatch.setattr(config, "FEATURED_COUNT", 10)
+    res = client.get("/api/professors/featured")
+    assert [c["id"] for c in res.json()["results"]] == ["P-001", "P-003", "P-005", "P-002"]
