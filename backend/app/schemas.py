@@ -9,6 +9,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from . import config
+
 ProfessorType = Literal["기초의학", "임상의학", "의학교육학", "인문사회의학"]
 
 
@@ -83,7 +85,7 @@ class SearchRequest(ContractModel):
     query: str = ""
     filters: SearchFilters = SearchFilters()
     sort: Literal["relevance"] = "relevance"
-    min_score: float = Field(default=0.3, ge=0.0, le=1.0)
+    min_score: float = Field(default_factory=lambda: config.DEFAULT_MIN_SCORE, ge=0.0, le=1.0)
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=5, ge=1, le=50)
 

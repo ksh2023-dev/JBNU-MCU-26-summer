@@ -35,11 +35,15 @@ def test_professor_type_filter():
     assert all(c["professorType"] == "기초의학" for c in res.json()["results"])
 
 
-def test_empty_query_browse_returns_null_score():
+def test_empty_query_browse_returns_null_score_sorted_by_name():
     res = client.post("/api/professors/search", json={"query": ""})
     body = res.json()
     assert body["total"] == 5
     assert all(c["matchScore"] is None for c in body["results"])
+    # 질의가 없으면 이름 가나다순 정렬
+    names = [c["name"] for c in body["results"]]
+    assert names == sorted(names)
+    assert names == ["김민수", "박지훈", "이서연", "정우진", "최은정"]
 
 
 def test_no_results_is_empty_not_error():
