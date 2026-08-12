@@ -10,19 +10,19 @@
  *   getFavorites() / addFavorite(id) / removeFavorite(id)
  *     → 찜하기는 백엔드 API가 없습니다. 브라우저 localStorage 만 사용합니다.
  *
- * 지금은 위 함수들이 data/professors.js 의 가짜 데이터를 걸러서 돌려줍니다.
- * 나중에 백엔드가 완성되면 "이 파일 안쪽만" fetch 호출로 바꾸면 되고,
+ * 연결 현황
+ *   getFeaturedProfessors()  실제 백엔드 호출 (GET /api/professors/featured)
+ *   getProfessors() · getProfessorById()  아직 data/professors.js 의 가짜 데이터
+ *
+ * 함수 이름·인자·돌려주는 값의 모양을 계약대로 맞춰 두었기 때문에,
+ * "이 파일 안쪽만" fetch 호출로 바꾸면 되고
  * 이 함수를 쓰는 페이지 코드는 고치지 않아도 됩니다.
- * 그래서 지금부터 함수 이름, 인자, 돌려주는 값의 모양을 계약대로 맞춰 둡니다.
+ * (getFeaturedProfessors 교체 때 HomePage.jsx 를 고치지 않은 것이 그 예입니다)
  *
  * 모든 함수는 async 입니다. 실제 통신처럼 await 로 쓰게 하기 위해서입니다.
  */
 
-import {
-  professors,
-  MOCK_COLLECTED_AT,
-  MOCK_FEATURED_PROFESSOR_IDS,
-} from '../data/professors.js'
+import { professors, MOCK_COLLECTED_AT } from '../data/professors.js'
 
 /** 한 페이지에 보여줄 교수 수 (계약: 5명씩) */
 export const DEFAULT_PAGE_SIZE = 5
@@ -33,12 +33,46 @@ export const DEFAULT_MIN_SCORE = 0.3
 /** 찜한 교수 id 배열을 저장할 localStorage 키 */
 const FAVORITES_STORAGE_KEY = 'favoriteProfessorIds'
 
-/** 실제 서버 통신처럼 보이도록 잠깐 기다리는 시간(ms) */
+/** 실제 서버 통신처럼 보이도록 잠깐 기다리는 시간(ms) — 아직 mock 인 함수들만 사용 */
 const MOCK_DELAY_MS = 300
 
 /** 지정한 시간만큼 기다리는 도우미 함수 */
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * 백엔드 API 공통 경로.
+ * 개발 중에는 vite.config.js 의 proxy 가 이 경로를 http://localhost:8000 으로 넘깁니다.
+ * 그래서 여기에는 호스트를 적지 않고 상대 경로만 둡니다.
+ */
+const API_BASE_PATH = '/api'
+
+/**
+ * 백엔드 JSON API 호출 공통 처리. (이 파일 안에서만 사용)
+ *
+ * fetch 는 404·500 같은 HTTP 오류에서도 예외를 던지지 않습니다.
+ * 그래서 res.ok 를 직접 확인해 오류를 예외로 바꿔 줍니다.
+ * 그래야 페이지의 try/catch 가 "불러오지 못했습니다" 화면으로 갈라질 수 있습니다.
+ *
+ * 오류에 status 를 붙여 둡니다. 계약 API ② 의 404(not_found) 처럼
+ * 상태 코드로 갈라야 하는 경우에 쓰기 위해서입니다.
+ *
+ * @param {string} path    API_BASE_PATH 뒤에 붙는 경로 (예: '/professors/featured')
+ * @param {object} [options] fetch 옵션 (method · headers · body 등)
+ * @returns {Promise<object>} 응답 JSON
+ * @throws {Error} HTTP 오류이면 예외. error.status 에 상태 코드가 담깁니다
+ */
+async function request(path, options) {
+  const response = await fetch(`${API_BASE_PATH}${path}`, options)
+
+  if (!response.ok) {
+    const error = new Error(`request_failed_${response.status}`)
+    error.status = response.status
+    throw error
+  }
+
+  return response.json()
 }
 
 /**
@@ -232,35 +266,32 @@ export async function getProfessorById(id) {
 }
 
 /**
- * API ③ 최근 연구 활동 교수 조회
+ * API ③ 최근 연구 활동 교수 조회 — 실제 백엔드 연결 완료
  *
  * 언제 쓰나: 메인(교수 검색) 페이지에 들어왔을 때
  *
- * ※ 여기서 돌려주는 목록은 '최근 연구 활동 교수 선정 결과'가 아닙니다.
- *   - 실제 선정 기준은 '최근 논문을 낸 교수'로 확정되었습니다.
- *     (데이터 계약 문서 v6 5장 3번 — 선정 기준 확정)
- *   - 다만 그 선정은 전부 백엔드가 수행합니다. 그래서 프론트는
- *     최근 논문 여부를 포함해 어떤 기준으로도 계산하지 않고,
- *     data/professors.js 에 손으로 적어 둔 고정 목록
- *     MOCK_FEATURED_PROFESSOR_IDS 를 그대로 보여주기만 합니다.
- *     (화면 배치를 확인하기 위한 mock fixture)
- *   - 백엔드가 완성되면 이 함수 안은 fetch 호출로 바뀌고,
- *     선정 결과를 그대로 받아 표시합니다.
+ * 요청: GET /api/professors/featured
  *
- * @returns {Promise<{results: object[], collectedAt: string}>} 교수 카드 3~5개
+ * 선정은 전부 백엔드가 수행합니다 (계약 v6.2 API ③).
+ *   - 교수별 '가장 최근 논문의 발행일' 최신순 상위 3명
+ *   - 그 판정에 쓰이는 latestPaper 는 백엔드 내부 필드라 응답에 오지 않습니다.
+ *     프론트는 이 필드를 받지도, 알 필요도 없습니다.
+ *   - 유효 후보가 3명 미만이면 있는 만큼만 옵니다. 없는 교수를 채우지 않습니다.
+ *
+ * 그래서 이 함수는 응답을 가공하지 않고 그대로 돌려줍니다.
+ * 프론트에서 다시 정렬하거나 slice(0, 3) 하지 않습니다.
+ *
+ * featured 카드의 matchScore 는 검색어가 없으므로 항상 null 입니다.
+ * 이는 누락이 아니라 정상 상태이며(계약 1-1 · 원칙 2), 카드 UI 가 점수를
+ * 표시하지 않으므로 렌더링에도 영향이 없습니다.
+ *
+ * @returns {Promise<{results: object[], collectedAt: string}>}
+ *   results     교수 카드 배열. 계약 v6.2 기준 3명 (유효 후보가 적으면 그보다 적을 수 있음)
+ *   collectedAt 데이터 수집 기준일 ('YYYY-MM-DD')
+ * @throws {Error} HTTP 오류·네트워크 오류. 호출하는 페이지가 오류 화면으로 갈라집니다
  */
 export async function getFeaturedProfessors() {
-  await delay(MOCK_DELAY_MS)
-
-  // fixture에 적힌 id 순서 그대로 찾아옵니다. (정렬·점수 계산 없음)
-  const featured = MOCK_FEATURED_PROFESSOR_IDS.map((id) =>
-    professors.find((professor) => professor.id === id),
-  ).filter(Boolean) // 목록에 오타가 있어도 화면이 깨지지 않도록
-
-  return {
-    results: featured.map(cloneProfessor),
-    collectedAt: MOCK_COLLECTED_AT,
-  }
+  return request('/professors/featured')
 }
 
 /* ------------------------------------------------------------------
