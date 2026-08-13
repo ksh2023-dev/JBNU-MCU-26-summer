@@ -164,7 +164,8 @@ function HomePage() {
         ) : featured.length === 0 ? (
           <p className="home-featured__message">현재 표시할 교수가 없습니다.</p>
         ) : (
-          // 응답이 3~5개로 달라질 수 있어 개수를 고정하지 않고 CSS grid 가 나눠 담는다
+          // v6.2 기준 3명이지만 유효 후보가 3명 미만이면 그보다 적게 올 수 있다.
+          // 그래서 개수를 고정하지 않고(slice 하지 않고) 받은 만큼 CSS grid 가 나눠 담는다
           <ul className="home-featured__list">
             {featured.map((professor) => (
               <li key={professor.id}>
