@@ -9,12 +9,21 @@
  */
 
 .search-bar {
+  /* --- 색 --- */
   --sb-primary: #2563eb;
   --sb-primary-dark: #1d4ed8;
-  --sb-border: #d1d5db;
+  --sb-primary-soft: #eff6ff;
+  --sb-border: #bfdbfe; /* 시안의 검색창은 회색이 아니라 옅은 파란 테두리 */
   --sb-surface: #ffffff;
   --sb-text-strong: #111827;
   --sb-text-muted: #6b7280;
+  --sb-ring: rgba(37, 99, 235, 0.16);
+  /* [검색] 버튼처럼 파랑으로 꽉 채운 면 위에 올라가는 글자·테두리 색 */
+  --sb-on-primary: #ffffff;
+
+  /* --- 형태 --- */
+  --sb-radius: 10px;
+  --sb-transition: 150ms ease;
 
   box-sizing: border-box;
   color: var(--sb-text-muted);
@@ -30,40 +39,73 @@
   box-sizing: border-box;
 }
 
+/* 다크모드.
+   전환 방식은 전역 index.css 의 color-scheme: light dark 하나뿐이라
+   (토글 버튼·data-theme·JS 상태 없음) 여기서도 prefers-color-scheme 으로만 맞춥니다.
+
+   [검색] 버튼만 라이트 모드와 반대로 뒤집습니다.
+   어두운 화면에서 파랑을 그대로 두면 흰 글자와의 대비가 약해 잘 읽히지 않습니다.
+   (#60a5fa 위의 흰 글자는 대비 2.5:1, #3b82f6 위도 3.7:1 — WCAG AA 4.5:1 미달)
+   그래서 버튼 면을 밝은 파랑으로 올리고 글자를 진하게 깔아
+   대비 5.1:1(hover 7.4:1)로 기준을 넘깁니다. 파랑 계열이라는 성격은 그대로입니다. */
+@media (prefers-color-scheme: dark) {
+  .search-bar {
+    --sb-primary: #3b82f6;
+    --sb-primary-dark: #60a5fa;
+    --sb-primary-soft: rgba(96, 165, 250, 0.12);
+    --sb-border: rgba(96, 165, 250, 0.35);
+    --sb-surface: #1e2028;
+    --sb-text-strong: #f3f4f6;
+    --sb-text-muted: #9ca3af;
+    --sb-ring: rgba(96, 165, 250, 0.25);
+    --sb-on-primary: #0b1220;
+  }
+}
+
 /* 입력창 + 버튼을 한 줄로 붙여 놓은 형태 */
 .search-bar__form {
   display: flex;
   border: 1px solid var(--sb-border);
-  border-radius: 10px;
+  border-radius: var(--sb-radius);
   background: var(--sb-surface);
   overflow: hidden; /* 안쪽 모서리가 바깥 radius 를 넘지 않도록 */
+  transition:
+    border-color var(--sb-transition),
+    box-shadow var(--sb-transition);
 }
 
+.search-bar__form:hover {
+  border-color: var(--sb-primary);
+}
+
+/* 입력 중임을 테두리 색만이 아니라 옅은 링으로도 알립니다 */
 .search-bar__form:focus-within {
   border-color: var(--sb-primary);
+  box-shadow: 0 0 0 3px var(--sb-ring);
 }
 
 /* 돋보기 아이콘 + 입력칸 */
 .search-bar__field {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex: 1;
   min-width: 0; /* 긴 입력값이 버튼을 밀어내지 않도록 */
-  padding: 0 14px;
+  padding: 0 18px;
   color: var(--sb-text-muted);
 }
 
+/* 검색이 이 서비스의 핵심 기능이라는 점이 드러나도록 시안 수준으로 높입니다 */
 .search-bar__input {
   flex: 1;
   min-width: 0;
-  padding: 15px 0;
+  padding: 19px 0;
   border: none;
   outline: none;
   background: transparent;
   color: var(--sb-text-strong);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .search-bar__input::placeholder {
@@ -76,23 +118,27 @@
   justify-content: center;
   gap: 8px;
   flex: none;
-  padding: 0 26px;
+  padding: 0 30px;
   border: none;
   background: var(--sb-primary);
-  color: #ffffff;
+  color: var(--sb-on-primary);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background var(--sb-transition),
+    color var(--sb-transition);
 }
 
 .search-bar__button:hover {
   background: var(--sb-primary-dark);
 }
 
+/* 파랑 면 안쪽에 그리는 링이라 테두리 색도 글자와 같은 값을 씁니다 */
 .search-bar__button:focus-visible {
-  outline: 2px solid var(--sb-primary-dark);
-  outline-offset: -4px;
+  outline: 2px solid var(--sb-on-primary);
+  outline-offset: -5px;
 }
 
 .search-bar__icon {
@@ -101,14 +147,33 @@
 
 /* 부모가 hintText 를 넘겼을 때만 렌더되는 보조 문구 */
 .search-bar__hint {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   color: var(--sb-text-muted);
   font-size: 13px;
 }
 
 /* 좁은 화면 — 버튼 글자를 줄이지 않고 좌우 여백만 줄입니다. */
 @media (max-width: 640px) {
+  .search-bar__field {
+    padding: 0 14px;
+    gap: 10px;
+  }
+
+  .search-bar__input {
+    padding: 15px 0;
+    font-size: 15px;
+  }
+
   .search-bar__button {
-    padding: 0 16px;
+    padding: 0 18px;
+    font-size: 15px;
+  }
+}
+
+/* 움직임을 줄이도록 설정한 사용자에게는 전환 효과를 끕니다 */
+@media (prefers-reduced-motion: reduce) {
+  .search-bar__form,
+  .search-bar__button {
+    transition: none;
   }
 }

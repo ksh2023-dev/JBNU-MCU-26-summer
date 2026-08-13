@@ -6,21 +6,38 @@
  *   - 색/여백 값은 .filter-panel 안에서만 쓰는 변수로 선언합니다.
  *     전역 index.css 는 아직 Vite 기본 템플릿이라(가운데 정렬 등) 그대로 물려받으면
  *     시안과 달라지기 때문에, 패널이 필요한 값을 직접 선언합니다.
+ *   - 교수 카드와 같은 radius / 테두리 / 그림자를 써서 결과 목록과 한 세트로 보이게 합니다.
  */
 
 .filter-panel {
+  /* --- 색 --- */
   --fp-primary: #2563eb;
+  --fp-primary-dark: #1d4ed8;
+  --fp-primary-soft: #eff6ff;
   --fp-border: #e5e7eb;
   --fp-surface: #ffffff;
   --fp-text: #374151;
   --fp-text-strong: #111827;
   --fp-text-muted: #6b7280;
+  --fp-focus: #2563eb;
+  /* 체크박스 자체를 칠하는 색. 체크 표시(흰색)가 보여야 해서
+     본문 파랑(--fp-primary)과 따로 둡니다. */
+  --fp-accent: #2563eb;
+  --fp-row-hover: #eff6ff;
+
+  /* --- 형태 --- */
+  --fp-radius-card: 12px;
+  --fp-radius-control: 6px;
+  --fp-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --fp-transition: 150ms ease;
 
   box-sizing: border-box;
-  padding: 20px;
+  padding: 22px;
   border: 1px solid var(--fp-border);
-  border-radius: 12px;
+  border-radius: var(--fp-radius-card);
   background: var(--fp-surface);
+  box-shadow: var(--fp-shadow);
 
   color: var(--fp-text);
   font-family: system-ui, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', sans-serif;
@@ -35,6 +52,31 @@
   box-sizing: border-box;
 }
 
+/* 다크모드.
+   전환 방식은 전역 index.css 의 color-scheme: light dark 하나뿐이라
+   (토글 버튼·data-theme·JS 상태 없음) 여기서도 prefers-color-scheme 으로만 맞춥니다.
+
+   패널은 교수 카드와 같은 밝기(#1e2028)에 두어 결과 목록과 한 세트로 보이게 합니다.
+   체크박스만 --fp-accent 를 한 단계 진한 파랑으로 두는데,
+   밝은 파랑(#60a5fa) 위에서는 흰 체크 표시가 묻혀 보이기 때문입니다. */
+@media (prefers-color-scheme: dark) {
+  .filter-panel {
+    --fp-primary: #60a5fa;
+    --fp-primary-dark: #93c5fd;
+    --fp-primary-soft: rgba(96, 165, 250, 0.12);
+    --fp-border: #30333d;
+    --fp-surface: #1e2028;
+    --fp-text: #d1d5db;
+    --fp-text-strong: #f3f4f6;
+    --fp-text-muted: #9ca3af;
+    --fp-focus: #93c5fd;
+    --fp-accent: #3b82f6;
+    /* 어두운 면 위에서는 옅은 배경이 잘 안 보여 라이트보다 살짝 진하게 잡습니다 */
+    --fp-row-hover: rgba(96, 165, 250, 0.15);
+    --fp-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+}
+
 /* ===== 헤더: 필터 / 초기화 ===== */
 
 .filter-panel__header {
@@ -42,59 +84,102 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 12px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--fp-border);
 }
 
 .filter-panel__title {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.2px;
   color: var(--fp-text-strong);
 }
 
+/* 이전에는 padding 이 0이라 글자 크기만큼만 눌러야 했습니다.
+   여백을 줘서 실제로 누를 수 있는 영역을 넓히고, 상태 표시도 붙입니다. */
 .filter-panel__reset {
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: -8px; /* 여백이 늘어난 만큼 시각적 정렬은 그대로 유지 */
+  padding: 7px 8px;
   border: 0;
+  border-radius: var(--fp-radius-control);
   background: none;
   color: var(--fp-primary);
   font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
+  transition:
+    background var(--fp-transition),
+    color var(--fp-transition);
+}
+
+.filter-panel__reset:hover {
+  background: var(--fp-row-hover);
+  color: var(--fp-primary-dark);
+}
+
+.filter-panel__reset:focus-visible {
+  outline: 2px solid var(--fp-focus);
+  outline-offset: 2px;
 }
 
 /* ===== 교수 구분 ===== */
 
+/* 찜 조건과 나누는 구분선을 이 묶음의 아래쪽에 둡니다.
+   (예전에는 찜 항목이 직접 위쪽 선을 그렸는데, 항목에 hover 배경이 생기면서
+    선과 배경이 겹쳐 보여 묶음 쪽으로 옮겼습니다) */
 .filter-panel__group {
   padding: 16px 0;
+  border-bottom: 1px solid var(--fp-border);
 }
 
 .filter-panel__group-title {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-size: 15px;
   font-weight: 600;
   color: var(--fp-text-strong);
 }
 
+/* 좌우 음수 마진으로 hover 배경이 글자보다 넓게 잡히도록 합니다.
+   (누를 수 있는 범위가 눈에 보이게 됩니다) */
 .filter-panel__option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: 9px;
+  margin: 0 -10px;
+  padding: 9px 10px;
+  border-radius: var(--fp-radius-control);
   cursor: pointer;
+  transition: background var(--fp-transition);
+}
+
+.filter-panel__option:hover {
+  background: var(--fp-row-hover);
 }
 
 .filter-panel__option input {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--fp-primary);
+  accent-color: var(--fp-accent);
   cursor: pointer;
 }
 
-/* 찜 조건 — 교수 구분과 구분선으로 나눕니다 */
+/* 키보드로 도달했을 때만 표시합니다.
+   (:focus-within 을 쓰면 마우스로 눌러도 테두리가 남습니다) */
+.filter-panel__option input:focus-visible {
+  outline: 2px solid var(--fp-focus);
+  outline-offset: 2px;
+}
+
+/* 찜 조건 — 교수 구분과 성격이 달라 구분선(위 group 의 아래쪽 선) 아래에 둡니다 */
 .filter-panel__option--favorites {
-  padding-top: 16px;
-  border-top: 1px solid var(--fp-border);
+  margin-top: 14px;
 }
 
 /* ===== 안내 문구 ===== */
@@ -102,5 +187,14 @@
 .filter-panel__hint {
   margin: 16px 0 0;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--fp-text-muted);
+}
+
+/* 움직임을 줄이도록 설정한 사용자에게는 전환 효과를 끕니다 */
+@media (prefers-reduced-motion: reduce) {
+  .filter-panel__reset,
+  .filter-panel__option {
+    transition: none;
+  }
 }

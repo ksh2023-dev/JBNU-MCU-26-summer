@@ -307,11 +307,15 @@ function SearchResultPage() {
                 ))}
               </ul>
 
-              <Pagination
-                currentPage={page}
-                totalPages={totalPages}
-                onPageChange={goToPage}
-              />
+              {/* Pagination 은 다른 팀원 담당이라 컴포넌트와 내부 스타일을 건드리지 않고,
+                  자리(여백·구분선)만 이 페이지 쪽 래퍼에서 잡습니다. */}
+              <div className="search-page__pagination">
+                <Pagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  onPageChange={goToPage}
+                />
+              </div>
 
               <p className="search-page__range">
                 총 {total}명 중 {rangeStart}–{rangeEnd}명 표시
