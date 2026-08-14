@@ -46,6 +46,18 @@
   color: var(--blue);
 }
 
+/* ===== 컨택하기 안내 문구 =====
+   이메일이 없거나 상세를 못 불러와 메일 창을 열지 못했을 때만 나타난다.
+   실패를 조용히 넘기지 않고 이유를 보여주기 위한 자리다. */
+.favorites-notice {
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: 1px solid var(--blue-border);
+  border-radius: 8px;
+}
+
 /* ===== 찜 카드 목록 ===== */
 .favorites-list {
   list-style: none;

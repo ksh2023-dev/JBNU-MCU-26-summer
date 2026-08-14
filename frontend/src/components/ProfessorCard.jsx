@@ -70,6 +70,7 @@ function getInitials(name) {
  * @param {'featured'|'search'} [props.variant='search'] 표시 형태
  * @param {boolean}  [props.isFavorite=false] 찜 여부. 부모가 localStorage 상태를 보고 내려줍니다
  * @param {(id: string) => void} [props.onToggleFavorite] 찜 버튼 클릭. 없으면 찜 버튼을 그리지 않습니다
+ * @param {(id: string) => void} [props.onContact] 컨택 버튼 클릭. 없으면 컨택 버튼을 그리지 않습니다
  * @param {(id: string) => void} [props.onDetail]         [자세히 보기] 클릭
  */
 function ProfessorCard({
@@ -77,6 +78,7 @@ function ProfessorCard({
   variant = 'search',
   isFavorite = false,
   onToggleFavorite,
+  onContact,
   onDetail,
 }) {
   /**
@@ -171,6 +173,32 @@ function ProfessorCard({
       </div>
 
       <div className="professor-card__actions">
+        {/* 부모가 컨택을 맡길 때만(=onContact 를 넘겼을 때만) 종이비행기 버튼을 그립니다. */}
+        {onContact && (
+          <button
+            type="button"
+            className="professor-card__button professor-card__contact"
+            onClick={() => onContact(professor.id)}
+          >
+            <svg
+              className="professor-card__icon"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M22 2 11 13" />
+              <path d="M22 2 15 22l-4-9-9-4z" />
+            </svg>
+            교수님께 컨택하기
+          </button>
+        )}
+
         {/* 부모가 찜 처리를 맡을 때만(=onToggleFavorite 를 넘겼을 때만) 찜 버튼을 그립니다. */}
         {onToggleFavorite && (
           <button
