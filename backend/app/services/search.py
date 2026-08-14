@@ -14,8 +14,8 @@ from ..data import Store
 
 WEIGHTS = {
     "keywords": 0.4,
-    "specialties": 0.3,
-    "papers": 0.2,
+    "specialties": 0.2,
+    "papers": 0.4,
     "department": 0.1,
 }
 
