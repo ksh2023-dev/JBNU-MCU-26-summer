@@ -1,5 +1,5 @@
 /**
- * professorApi.js — 교수 관련 API 함수 모음 (API ①·③ 백엔드 연결, API ② 는 아직 mock)
+ * professorApi.js — 교수 관련 API 함수 모음 (API ①·②·③ 백엔드 연결 완료)
  *
  * 「데이터 계약 문서 v6.2」의 2. API 엔드포인트와 1:1로 대응합니다.
  *
@@ -12,8 +12,9 @@
  *
  * 연결 현황
  *   getProfessors()          실제 백엔드 호출 (POST /api/professors/search)
+ *   getProfessorById()       실제 백엔드 호출 (GET /api/professors/{id})
  *   getFeaturedProfessors()  실제 백엔드 호출 (GET /api/professors/featured)
- *   getProfessorById()       아직 data/professors.js 의 가짜 데이터
+ *   getFavoriteProfessors()  @deprecated — 미사용. 찜 목록도 getProfessors() 를 씁니다 (v6.3)
  *
  * 함수 이름·인자·돌려주는 값의 모양을 계약대로 맞춰 두었기 때문에,
  * "이 파일 안쪽만" fetch 호출로 바꾸면 되고
@@ -180,48 +181,28 @@ export async function getProfessors(query = '', options = {}) {
 }
 
 /**
- * API ② 교수 상세 조회
+ * API ② 교수 상세 조회 — 실제 백엔드 연결 완료
  *
  * 언제 쓰나: 카드의 [자세히 보기] 클릭
  *
- * 주의: mock 데이터에는 카드용 정보만 있습니다.
- * 연구실명 · 이메일 · 홈페이지 · 논문은 실제 값을 지어내면 안 되므로
- * 계약 원칙 2에 따라 null / 빈 배열로 돌려줍니다.
- * (화면에는 "정보 없음", "등록된 대표 논문 없음"으로 표시)
- * 실제 값은 백엔드가 완성되면 채워집니다.
+ * 요청: GET /api/professors/{id} (계약 v6.2 API ②, 예: /api/professors/P-012)
+ *
+ * 응답은 계약 1-2 교수 상세 객체입니다. 이 함수는 가공하지 않고 그대로 돌려줍니다.
+ *   - labName · email · homepageUrl 은 값이 없으면 null 로 옵니다 (계약 원칙 2).
+ *     "정보 없음" 표시와 홈페이지 링크 숨김은 화면 쪽 몫입니다 (계약 4장).
+ *   - keywords 는 상세에서 전체가 옵니다. 프론트가 개수를 자르지 않습니다.
+ *   - papers 는 pmid 가 있는 논문만 오고, 없으면 빈 배열 [] 입니다 (계약 원칙 1).
+ *     PubMed 주소는 pmid 로 화면이 직접 만듭니다 (계약 1-2).
  *
  * @param {string} id 교수 id (예: 'P-001')
- * @returns {Promise<object>} 교수 상세 객체
- * @throws {Error} 없는 id 이면 에러. error.status = 404, error.code = 'not_found'
+ * @returns {Promise<object>} 계약 1-2 교수 상세 객체
+ * @throws {Error} HTTP 오류·네트워크 오류.
+ *   없는 id 는 계약대로 HTTP 404 + { "error": "not_found" } 로 오고,
+ *   request() 가 error.status = 404 를 붙여 던집니다.
+ *   호출하는 페이지는 이 값으로 "미발견"과 "불러오기 실패"를 갈라냅니다.
  */
 export async function getProfessorById(id) {
-  await delay(MOCK_DELAY_MS)
-
-  const found = professors.find((professor) => professor.id === id)
-
-  if (!found) {
-    // 실제 백엔드는 HTTP 404 + { "error": "not_found" } 로 응답합니다.
-    const error = new Error('not_found')
-    error.status = 404
-    error.code = 'not_found'
-    throw error
-  }
-
-  const card = cloneProfessor(found)
-
-  return {
-    id: card.id,
-    name: card.name,
-    profileImageUrl: card.profileImageUrl,
-    professorType: card.professorType,
-    department: card.department,
-    labName: null, // 값 없음 → null
-    specialties: card.specialties,
-    keywords: card.keywords, // 상세에서는 전체 노출
-    email: null, // 값 없음 → null
-    homepageUrl: null, // 값 없음 → null (화면에서는 링크 숨김)
-    papers: [], // pmid 없는 논문은 넣지 않으므로 빈 배열
-  }
+  return request(`/professors/${encodeURIComponent(id)}`)
 }
 
 /**
@@ -307,10 +288,21 @@ export function removeFavorite(id) {
 }
 
 /**
+ * @deprecated 계약 v6.3 기준으로 더 이상 사용하지 않습니다. 호출하는 곳이 없습니다.
+ *
+ * 찜 목록 화면의 교수 데이터 조회는 API ① 재사용으로 확정되었습니다. (v6.3 2장)
+ *
+ *   getProfessors('', { filters: { professorType: [], favoriteIds }, page, pageSize })
+ *
+ * 아래 함수는 그 방식과 달리
+ *   - mock 배열(data/professors.js)에서 찾고
+ *   - 없는 id 를 프론트가 걸러내며(filter)
+ *   - 이름 오름차순 정렬·페이지네이션을 하지 않고
+ *   - total 을 프론트가 셉니다
+ * 계약과 어긋나므로 새로 쓰지 마세요. mock 데이터 정리 단계에서 함께 삭제할 예정입니다.
+ *
  * 찜한 교수들의 카드 객체를 가져옵니다.
  * getFavorites()로 얻은 id 목록을 카드 데이터로 바꿔 돌려줍니다.
- * 지금은 mock 배열에서 찾고, 백엔드가 생기면 이 안쪽만 fetch로 바꾸면 됩니다.
- * (그래서 지금부터 async 입니다)
  *
  * @returns {Promise<{results: object[], total: number, collectedAt: string}>}
  */

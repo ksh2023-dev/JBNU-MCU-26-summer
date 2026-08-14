@@ -264,7 +264,6 @@ function ProfessorDetailPage() {
                   <p className="detail-paper__meta">
                     {paper.journal ?? NO_DATA} · {paper.year ?? NO_DATA}
                   </p>
-                  <p className="detail-paper__meta">PMID: {paper.pmid}</p>
                 </div>
 
                 {/* pmid 로 PubMed 주소를 직접 만들어 새 탭으로 연다 */}
