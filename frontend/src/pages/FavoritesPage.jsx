@@ -22,12 +22,18 @@ import { useNavigate } from 'react-router-dom'
 
 import {
   getProfessors,
+  getProfessorById,
   getFavorites,
   removeFavorite,
   DEFAULT_PAGE_SIZE,
 } from '../api/professorApi.js'
 import ProfessorCard from '../components/ProfessorCard.jsx'
 import Pagination from '../components/Pagenation.jsx'
+import {
+  buildContactDraft,
+  toMailtoHref,
+  openMailto,
+} from '../utils/contactMail.js'
 import '../styles/FavoritesPage.css'
 
 function FavoritesPage() {
@@ -49,6 +55,7 @@ function FavoritesPage() {
   const [total, setTotal] = useState(0) // 조건에 맞는 전체 교수 수 (응답값)
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false) // 불러오기 자체가 실패했는가?
+  const [contactNotice, setContactNotice] = useState('')
 
   /**
    * 찜 목록이나 페이지가 바뀔 때마다 API ① 을 호출합니다.
@@ -117,6 +124,28 @@ function FavoritesPage() {
     navigate(`/professors/${id}`)
   }
 
+  // 종이비행기 클릭 → 이메일은 '상세 전용'이라 이 시점에 상세를 불러와 이메일을 얻는다.
+  async function handleContact(id) {
+    setContactNotice('') // 이전 안내 지우기
+    try {
+      const detail = await getProfessorById(id)
+
+      if (!detail.email) {
+        // 이메일은 계약상 카드에 없고 상세에만 있습니다.
+        // 값이 없으면(null) 주소를 지어내지 않고 메일 창을 열지 않습니다. (계약 원칙 2)
+        setContactNotice(
+          '아직 이 교수님의 이메일 정보가 없어 메일 작성 창을 열 수 없습니다.',
+        )
+        return
+      }
+
+      const { subject, body } = buildContactDraft(detail)
+      openMailto(toMailtoHref(detail.email, subject, body))
+    } catch {
+      setContactNotice('교수 정보를 불러오지 못해 메일 작성 창을 열 수 없습니다.')
+    }
+  }
+
   /* ---------- 1) 불러오는 중 ---------- */
   if (isLoading) {
     return <p className="favorites-message">불러오는 중입니다...</p>
@@ -163,6 +192,8 @@ function FavoritesPage() {
         <span className="favorites-count">총 {total}명</span>
       </div>
 
+      {contactNotice && <p className="favorites-notice">{contactNotice}</p>}
+
       <ul className="favorites-list">
         {results.map((professor) => (
           <li key={professor.id}>
@@ -171,6 +202,7 @@ function FavoritesPage() {
               variant="search" // 목업의 가로형 카드
               isFavorite={true} // 이 페이지의 카드는 전부 찜한 교수
               onToggleFavorite={handleRemoveFavorite} // 여기선 항상 "찜 취소"
+              onContact={handleContact}
               onDetail={handleDetail}
             />
           </li>
