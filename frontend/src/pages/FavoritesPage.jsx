@@ -1,40 +1,97 @@
+/**
+ * FavoritesPage.jsx — 찜한 교수 목록 페이지
+ *
+ * 「데이터 계약 문서 v6.3」 6장 화면 매핑의 "4. 찜 목록" 화면입니다.
+ * 찜 목록 전용 백엔드 API는 없고, API ① getProfessors() 를 재사용합니다. (v6.3 확정)
+ *
+ *   ① localStorage 에서 찜 id 배열을 읽는다        getFavorites()
+ *   ② query: "" + filters.favoriteIds 로 검색한다   getProfessors()
+ *   ③ 응답의 results / total 을 그대로 화면에 쓴다
+ *
+ * 이 페이지가 "하지 않는" 일 (계약 v6.3 API ①)
+ *   - 교수별로 getProfessorById() 를 찜 개수만큼 호출하지 않습니다.
+ *   - 응답을 다시 거르거나(filter) 정렬하거나(sort) 자르지(slice) 않습니다.
+ *     교집합·이름 오름차순·페이지네이션·total 계산은 전부 백엔드 몫입니다.
+ *     (query 가 "" 이므로 browse 정책 — matchScore 는 null, minScore 미적용, 이름 오름차순)
+ *   - 화면에 보일 수를 localStorage 길이로 세지 않습니다. 항상 응답의 total 을 씁니다.
+ *     찜 id 중 데이터에 없는 교수가 섞여 있으면 둘은 서로 다를 수 있습니다. (v6.3)
+ */
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { getFavoriteProfessors, removeFavorite } from '../api/professorApi.js'
+import {
+  getProfessors,
+  getFavorites,
+  removeFavorite,
+  DEFAULT_PAGE_SIZE,
+} from '../api/professorApi.js'
 import ProfessorCard from '../components/ProfessorCard.jsx'
 import Pagination from '../components/Pagenation.jsx'
 import '../styles/FavoritesPage.css'
 
-// 한 페이지에 보여줄 찜 교수 수
-const PAGE_SIZE = 5
-
 function FavoritesPage() {
   const navigate = useNavigate()
 
-  const [favorites, setFavorites] = useState([]) // 찜한 교수 카드 전체
+  /**
+   * localStorage 의 찜 id 배열.
+   *
+   * 요청에 실어 보낼 값이면서, 동시에 재조회 트리거이기도 합니다.
+   * 찜을 취소하면 removeFavorite 가 "새 배열"을 돌려주므로 아래 effect 가 다시 돕니다.
+   *
+   * 이 화면에서는 항상 배열입니다. null(찜 필터 꺼짐 = 전체 교수 목록)로 보내지 않습니다.
+   * 찜이 0명이면 빈 배열 [] 이 그대로 실려 results: [], total: 0 이 옵니다. (계약 v6.3)
+   */
+  const [favoriteIds, setFavoriteIds] = useState(() => getFavorites())
+
+  const [page, setPage] = useState(1) // 현재 페이지 (1부터)
+  const [results, setResults] = useState([]) // 현재 페이지의 교수 카드 (응답 그대로)
+  const [total, setTotal] = useState(0) // 조건에 맞는 전체 교수 수 (응답값)
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false) // 불러오기 자체가 실패했는가?
-  const [currentPage, setCurrentPage] = useState(1) // 현재 페이지 (1부터)
 
-  // 페이지에 처음 들어왔을 때 한 번 전체를 불러온다.
-  // (찜은 localStorage 라 양이 적어, 전체를 받아 프론트에서 페이지를 나눈다.
-  //  서버가 나눠 보내주는 검색 페이지와는 방식이 다르다.)
+  /**
+   * 찜 목록이나 페이지가 바뀔 때마다 API ① 을 호출합니다.
+   * (계약 v6.3 3장: 페이지 클릭 시 API ① 을 page 만 바꿔 재호출)
+   */
   useEffect(() => {
-    let ignore = false // 응답이 늦게 와서 페이지를 이미 떠난 경우, 옛 결과 무시용
+    let ignore = false // 응답이 늦게 와서 조건이 이미 바뀐 경우, 옛 결과 무시용
 
     async function load() {
       setIsLoading(true)
       setHasError(false)
       try {
-        const data = await getFavoriteProfessors() // { results, total, collectedAt }
+        // 인자 모양은 계약 v6.3 API ①의 요청 JSON 과 같습니다.
+        // sort('relevance')·minScore 는 getProfessors 의 기본값이 그대로 실립니다.
+        // 검색어가 "" 라 백엔드가 minScore 를 무시합니다. (v6.3 browse 정책)
+        const data = await getProfessors('', {
+          filters: { professorType: [], favoriteIds },
+          page,
+          pageSize: DEFAULT_PAGE_SIZE,
+        })
         if (ignore) return
-        setFavorites(data.results)
+
+        // 찜을 취소해 결과가 줄면서 지금 보던 페이지가 사라질 수 있습니다.
+        // 그때는 존재하는 마지막 페이지로 당겨 다시 조회합니다.
+        // 새 total 은 응답이 와야 알 수 있어(없는 id 가 섞이면 찜 개수와 다릅니다)
+        // 프론트에서 미리 계산하지 않고 이 자리에서 응답값으로 판단합니다.
+        //
+        // 여기서 isLoading 을 끄지 않고 그대로 둡니다. 아래 성공 경로에서만 끄기 때문에
+        // 페이지를 당기는 동안 "찜한 교수가 없습니다" 가 잠깐 스치지 않습니다.
+        const lastPage = Math.max(1, Math.ceil(data.total / data.pageSize))
+        if (page > lastPage) {
+          setPage(lastPage)
+          return
+        }
+
+        // 응답을 가공하지 않고 그대로 씁니다. (계약 v6.3 API ①)
+        setResults(data.results)
+        setTotal(data.total)
+        setIsLoading(false)
       } catch {
         if (ignore) return
         setHasError(true)
-      } finally {
-        if (!ignore) setIsLoading(false)
+        setIsLoading(false)
       }
     }
 
@@ -42,27 +99,17 @@ function FavoritesPage() {
     return () => {
       ignore = true
     }
-  }, [])
+  }, [favoriteIds, page])
 
-  // 전체 페이지 수 (최소 1). 찜이 줄어들면 이 값도 줄어든다.
-  const totalPages = Math.max(1, Math.ceil(favorites.length / PAGE_SIZE))
-
-  // 현재 페이지에 해당하는 부분만 잘라낸다 (프론트에서 페이지 나누기)
-  const startIndex = (currentPage - 1) * PAGE_SIZE
-  const visibleFavorites = favorites.slice(startIndex, startIndex + PAGE_SIZE)
-
-  // 찜 취소 → 저장소에서 지우고, 화면 목록에서도 그 카드를 빼서 즉시 사라지게 한다
+  /**
+   * 찜 취소 — 저장은 localStorage 담당 (계약: 백엔드 API 없음)
+   *
+   * removeFavorite 가 갱신된 id 배열을 돌려주므로, 그 값을 그대로 state 에 넣습니다.
+   * 배열이 바뀌면 위 effect 가 다시 돌아 서버에서 이 페이지를 새로 받아옵니다.
+   * (프론트가 목록에서 직접 빼거나 페이지 수를 다시 계산하지 않습니다)
+   */
   function handleRemoveFavorite(id) {
-    removeFavorite(id) // localStorage 라 sync
-
-    const remaining = favorites.filter((professor) => professor.id !== id)
-    setFavorites(remaining)
-
-    // 찜을 지워서 현재 페이지가 사라진 경우(예: 2페이지의 마지막 1명을 삭제),
-    // 존재하는 마지막 페이지로 자동으로 당겨준다.
-    // (useEffect 로 뒤늦게 고치지 않고, 목록이 줄어드는 바로 이 자리에서 함께 정한다)
-    const nextTotalPages = Math.max(1, Math.ceil(remaining.length / PAGE_SIZE))
-    if (currentPage > nextTotalPages) setCurrentPage(nextTotalPages)
+    setFavoriteIds(removeFavorite(id))
   }
 
   // 자세히 보기 → 상세 페이지로 이동 (라우팅은 카드가 아니라 페이지가 담당)
@@ -85,7 +132,8 @@ function FavoritesPage() {
   }
 
   /* ---------- 3) 찜한 교수가 하나도 없음 ---------- */
-  if (favorites.length === 0) {
+  // 검색 실패가 아니라 "아직 찜한 교수가 없음" 입니다. (계약 v6.3)
+  if (total === 0) {
     return (
       <div className="favorites-empty">
         <p>아직 찜한 교수가 없습니다.</p>
@@ -101,19 +149,22 @@ function FavoritesPage() {
   }
 
   /* ---------- 4) 정상 목록 ---------- */
-  // 화면에 보이는 범위 (예: 총 7명 중 6–7명). 값을 지어내지 않고 실제로 계산한다.
-  const rangeStart = startIndex + 1
-  const rangeEnd = startIndex + visibleFavorites.length
+  // 전체 페이지 수는 응답의 total 로만 계산합니다. (계약 v6.3 API ①)
+  const totalPages = Math.max(1, Math.ceil(total / DEFAULT_PAGE_SIZE))
+
+  // 화면에 보이는 범위 (예: 총 7명 중 6–7명). 값을 지어내지 않고 실제로 계산합니다.
+  const rangeStart = (page - 1) * DEFAULT_PAGE_SIZE + 1
+  const rangeEnd = (page - 1) * DEFAULT_PAGE_SIZE + results.length
 
   return (
     <div className="favorites-page">
       <div className="favorites-header">
         <h1 className="favorites-title">찜한 교수 목록</h1>
-        <span className="favorites-count">총 {favorites.length}명</span>
+        <span className="favorites-count">총 {total}명</span>
       </div>
 
       <ul className="favorites-list">
-        {visibleFavorites.map((professor) => (
+        {results.map((professor) => (
           <li key={professor.id}>
             <ProfessorCard
               professor={professor}
@@ -127,13 +178,13 @@ function FavoritesPage() {
       </ul>
 
       <Pagination
-        currentPage={currentPage}
+        currentPage={page}
         totalPages={totalPages}
-        onPageChange={setCurrentPage}
+        onPageChange={setPage}
       />
 
       <p className="favorites-range">
-        총 {favorites.length}명 중 {rangeStart}–{rangeEnd}명 표시
+        총 {total}명 중 {rangeStart}–{rangeEnd}명 표시
       </p>
     </div>
   )

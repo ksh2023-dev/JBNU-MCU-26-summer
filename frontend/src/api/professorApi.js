@@ -14,7 +14,7 @@
  *   getProfessors()          실제 백엔드 호출 (POST /api/professors/search)
  *   getProfessorById()       실제 백엔드 호출 (GET /api/professors/{id})
  *   getFeaturedProfessors()  실제 백엔드 호출 (GET /api/professors/featured)
- *   getFavoriteProfessors()  아직 data/professors.js 의 가짜 데이터
+ *   getFavoriteProfessors()  @deprecated — 미사용. 찜 목록도 getProfessors() 를 씁니다 (v6.3)
  *
  * 함수 이름·인자·돌려주는 값의 모양을 계약대로 맞춰 두었기 때문에,
  * "이 파일 안쪽만" fetch 호출로 바꾸면 되고
@@ -288,10 +288,21 @@ export function removeFavorite(id) {
 }
 
 /**
+ * @deprecated 계약 v6.3 기준으로 더 이상 사용하지 않습니다. 호출하는 곳이 없습니다.
+ *
+ * 찜 목록 화면의 교수 데이터 조회는 API ① 재사용으로 확정되었습니다. (v6.3 2장)
+ *
+ *   getProfessors('', { filters: { professorType: [], favoriteIds }, page, pageSize })
+ *
+ * 아래 함수는 그 방식과 달리
+ *   - mock 배열(data/professors.js)에서 찾고
+ *   - 없는 id 를 프론트가 걸러내며(filter)
+ *   - 이름 오름차순 정렬·페이지네이션을 하지 않고
+ *   - total 을 프론트가 셉니다
+ * 계약과 어긋나므로 새로 쓰지 마세요. mock 데이터 정리 단계에서 함께 삭제할 예정입니다.
+ *
  * 찜한 교수들의 카드 객체를 가져옵니다.
  * getFavorites()로 얻은 id 목록을 카드 데이터로 바꿔 돌려줍니다.
- * 지금은 mock 배열에서 찾고, 백엔드가 생기면 이 안쪽만 fetch로 바꾸면 됩니다.
- * (그래서 지금부터 async 입니다)
  *
  * @returns {Promise<{results: object[], total: number, collectedAt: string}>}
  */
