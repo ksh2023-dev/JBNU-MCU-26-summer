@@ -8,6 +8,12 @@
       → 대표 3편 + latestPaper 선정 (2단계 부품 재사용)
       → 교수 1명이 끝날 때마다 data/output/professors_papers.json에 즉시 저장 (재개 가능)
 
+안정성: 외부 API 호출(esearch·efetch·OpenAlex)은 일시 오류(5xx·네트워크 예외)면
+5초 → 15초 간격으로 최대 3회 시도한다. 그래도 실패하면 배치 전체를 죽이는 대신
+- 제목 검색 실패 → 그 논문만 notFound("HTTP 오류")로 기록하고 계속,
+- efetch·OpenAlex 실패 → 그 교수를 review.fetchFailed에 기록하고 다음 교수로 계속한다.
+  fetchFailed 교수는 저장되지 않으므로 재실행하면 자동으로 다시 시도된다.
+
 전략 (작업지시서-3단계):
 - 교수 본인 프로필 페이지의 논문 인용문 = 신원 보증 기준점. 인용문에서 뽑은 "제목"으로
   검색하므로, 이름+소속 검색보다 동명이인 위험이 낮다.
@@ -46,6 +52,11 @@ LIMIT = None            # 개발·검증용: 입력 목록 앞 N명만 처리 (N
 
 # API 예절: PubMed 호출(esearch·efetch) 사이 0.4초 — 1단계와 같은 값
 SLEEP_SECONDS = 0.4
+
+# 재시도 정책 — 일시적 서버 오류(5xx)·네트워크 예외 한 번에 수십 분짜리 배치 전체가
+# 죽지 않게 한다. 4xx는 요청 자체가 잘못된 것이라 다시 보내도 같은 결과 → 재시도 없음.
+RETRY_ATTEMPTS = 3      # 같은 호출을 최대 3회까지 시도
+RETRY_WAITS = [5, 15]   # 시도 사이 대기(초): 1→2회차 5초, 2→3회차 15초
 
 # 검색 결과가 이 수를 넘으면 "어느 논문인지 지목 불가"로 보고 notFound 처리한다.
 # 제목 검색에서는 동명이인 대신 '흔한 문구가 여러 논문과 겹치는' 위험이 있는데,
@@ -165,6 +176,55 @@ def extract_title(citation):
 
 
 # ---------------------------------------------------------------------------
+# 외부 API 호출 재시도
+# ---------------------------------------------------------------------------
+
+class FetchFailedError(Exception):
+    """efetch·OpenAlex가 재시도 후에도 실패했다는 신호.
+
+    main()이 이걸 받아 교수를 review.fetchFailed에 기록하고 다음 교수로 넘어간다.
+    해당 교수는 저장되지 않으므로 재실행하면 자동으로 다시 시도된다.
+    """
+
+    def __init__(self, stage, cause):
+        super().__init__(f"{stage} 실패: {cause}")
+        self.stage = stage   # "efetch" 또는 "openalex"
+        self.cause = cause   # "HTTP 500" 같은 한 줄 요약
+
+
+def _describe_error(exc):
+    """예외를 기록용 한 줄로 요약한다 (HTTP 응답이 있으면 상태 코드, 없으면 예외 이름)."""
+    response = getattr(exc, "response", None)
+    if response is not None:
+        return f"HTTP {response.status_code}"
+    return type(exc).__name__
+
+
+def call_with_retry(description, func):
+    """외부 API 호출 1건을 재시도로 감싼다. func는 인자 없는 함수(lambda)로 받는다.
+
+    - 5xx 응답·네트워크 예외(타임아웃·연결 끊김 등): 5초 → 15초 쉬며 최대 3회 시도
+    - 4xx 응답: 요청 자체의 문제라 다시 보내도 같은 결과 — 즉시 실패
+    - 끝까지 실패하면 마지막 예외를 그대로 올린다 — 기록하고 계속할지는 호출한 쪽이 정한다
+    """
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            return func()
+        except requests.exceptions.RequestException as exc:
+            response = getattr(exc, "response", None)
+            if response is not None and 400 <= response.status_code < 500:
+                raise
+            if attempt == RETRY_ATTEMPTS:
+                raise
+            wait = RETRY_WAITS[attempt - 1]
+            print(
+                f"[재시도 {attempt + 1}/{RETRY_ATTEMPTS}] {description} "
+                f"오류({_describe_error(exc)}) — {wait}초 후 다시 시도"
+            )
+            time.sleep(wait)
+
+
+# ---------------------------------------------------------------------------
 # PubMed 제목 검색
 # ---------------------------------------------------------------------------
 
@@ -187,6 +247,9 @@ def search_pmid_by_title(title):
     1차: "제목"[Title] 구문 검색 — 제목 칸에서 정확히 그 문구를 찾는다.
     2차: 1차가 0건이면 제목을 일반 term으로 검색 — 특수문자·표기 차이로
          구문 검색이 실패해도 단어 단위 검색으로는 걸리는 경우를 구제한다.
+
+    통신이 재시도 후에도 실패하면 RequestException이 그대로 올라간다 —
+    호출한 쪽(process_professor)이 그 논문만 notFound("HTTP 오류")로 기록하고 계속한다.
     """
     # 검색 필드 문법과 충돌하는 문자를 걷어낸다 (["]는 구문 경계, []는 필드 표기, ()는 묶음)
     query = re.sub(r"\s+", " ", re.sub(r'["\[\]{}()]', " ", title)).strip()
@@ -194,10 +257,10 @@ def search_pmid_by_title(title):
         return None
 
     time.sleep(SLEEP_SECONDS)
-    count, ids = _esearch(f'"{query}"[Title]')
+    count, ids = call_with_retry("PubMed 제목 검색(esearch)", lambda: _esearch(f'"{query}"[Title]'))
     if count == 0:
         time.sleep(SLEEP_SECONDS)
-        count, ids = _esearch(query)
+        count, ids = call_with_retry("PubMed 제목 검색(esearch)", lambda: _esearch(query))
 
     if count == 0 or not ids:
         return None
@@ -246,10 +309,14 @@ def empty_record():
 def process_professor(name, entries, progress_label, api_key):
     """교수 1명의 인용문 목록을 논문 수집 결과로 바꾼다.
 
-    반환: (교수 결과 dict, 파싱 실패 인용문 목록, 검색 실패 제목 목록)
+    반환: (교수 결과 dict, 파싱 실패 인용문 목록, 검색 실패 항목 목록)
+    - 검색 실패 항목은 {"title": ...} 모양이고, 재시도까지 실패한 통신 오류로 포기한
+      항목에는 "reason": "HTTP 오류"가 붙는다 (사람이 구분해 검수할 수 있게).
+    - efetch·OpenAlex가 재시도 후에도 실패하면 FetchFailedError를 던진다 —
+      main()이 fetchFailed로 기록하고 다음 교수로 넘어간다.
     """
     parse_failed = []      # 제목 추출 실패 인용문
-    not_found = []         # 검색 실패(0건·모호·제목 불일치) 제목
+    not_found = []         # 검색 실패(0건·모호·제목 불일치·통신 오류) 항목
     pmid_to_title = {}     # 확보한 PMID → 인용문에서 뽑은 제목 (입력 순서 유지 + 중복 제거)
 
     for entry in entries:
@@ -258,17 +325,31 @@ def process_professor(name, entries, progress_label, api_key):
         if title is None:
             parse_failed.append(citation)
             continue
-        pmid = search_pmid_by_title(title)
+        try:
+            pmid = search_pmid_by_title(title)
+        except requests.exceptions.RequestException as exc:
+            # 재시도까지 실패한 통신 오류 — 이 논문만 포기하고 다음 인용문으로 계속한다
+            print(f"제목 검색 통신 실패({_describe_error(exc)}) → notFound(HTTP 오류) 기록 후 계속")
+            not_found.append({"title": title, "reason": "HTTP 오류"})
+            continue
         if pmid is None:
-            not_found.append(title)
+            not_found.append({"title": title})
         elif pmid not in pmid_to_title:   # PMID 기준 중복 제거 (같은 논문이 두 번 인용된 경우)
             pmid_to_title[pmid] = title
 
     searched = len(entries) - len(parse_failed)
     print(f"{progress_label} {name}: 인용문 {len(entries)}건 → PMID {len(pmid_to_title)}건 확보")
 
-    # efetch 상세 수집 — 1단계 부품 재사용 (PMID를 쉼표로 묶어 한 번에 요청)
-    papers = fetch_one.fetch_papers(list(pmid_to_title)) if pmid_to_title else []
+    # efetch 상세 수집 — 1단계 부품 재사용 (PMID를 쉼표로 묶어 한 번에 요청).
+    # 재시도까지 실패하면 이 교수 전체를 fetchFailed로 넘긴다 (저장 안 함 → 재실행 때 자동 재시도).
+    try:
+        papers = (
+            call_with_retry("PubMed 상세 수집(efetch)", lambda: fetch_one.fetch_papers(list(pmid_to_title)))
+            if pmid_to_title
+            else []
+        )
+    except requests.exceptions.RequestException as exc:
+        raise FetchFailedError("efetch", _describe_error(exc))
 
     # 제목 대조 검증 — 검색이 돌려준 논문이 인용문의 그 논문이 맞는지 확인하고,
     # 다르면 결과에서 빼고 notFound로 돌린다 (불확실하면 넣지 않는다 — 원칙 2)
@@ -279,12 +360,19 @@ def process_professor(name, entries, progress_label, api_key):
             verified.append(paper)
         else:
             print(f"제목 불일치로 제외: PMID {paper['pmid']} (다른 논문으로 판단 → notFound 기록)")
-            not_found.append(claimed_title)
+            not_found.append({"title": claimed_title})
     papers = verified
 
-    # OpenAlex 인용수(50개 묶음) + 대표 3편 선정 — 2단계 부품 재사용
+    # OpenAlex 인용수(50개 묶음) + 대표 3편 선정 — 2단계 부품 재사용.
+    # efetch와 마찬가지로, 재시도까지 실패하면 이 교수 전체를 fetchFailed로 넘긴다.
     if papers:
-        counts = enrich_citations.fetch_cited_by_counts([p["pmid"] for p in papers], api_key)
+        try:
+            counts = call_with_retry(
+                "OpenAlex 인용수 조회",
+                lambda: enrich_citations.fetch_cited_by_counts([p["pmid"] for p in papers], api_key),
+            )
+        except requests.exceptions.RequestException as exc:
+            raise FetchFailedError("openalex", _describe_error(exc))
         papers = enrich_citations.attach_citations(papers, counts)
         selected_papers, latest_paper = enrich_citations.select_representative_papers(papers)
     else:
@@ -311,11 +399,15 @@ def load_state():
             state = json.load(f)
         state.setdefault("professors", {})
         state.setdefault("review", {})
-        for key in ("noPapers", "parseFailed", "notFound"):
-            state["review"].setdefault(key, [])
+        for key in ("noPapers", "parseFailed", "notFound", "fetchFailed"):
+            state["review"].setdefault(key, [])   # 이전 버전 산출물에 없던 목록도 채워 준다
         print(f"기존 산출물 발견: 교수 {len(state['professors'])}명 완료됨 → 이어서 진행 (resume)")
         return state
-    return {"collectedAt": None, "professors": {}, "review": {"noPapers": [], "parseFailed": [], "notFound": []}}
+    return {
+        "collectedAt": None,
+        "professors": {},
+        "review": {"noPapers": [], "parseFailed": [], "notFound": [], "fetchFailed": []},
+    }
 
 
 def save_state(state):
@@ -345,7 +437,13 @@ def print_summary(state, elapsed_seconds, run_professors, run_searched):
     print(f"저장된 교수: {len(professors)}명 (논문 0건 {len(review['noPapers'])}명 포함)")
     print(f"제목 검색: 시도 {searched}건 / 성공 {success}건 ({rate:.1f}%) / notFound {not_found}건")
     print(f"수집 논문: {collected}편 (PMID 중복 제거 후)")
-    print(f"review: noPapers {len(review['noPapers'])} / parseFailed {len(review['parseFailed'])} / notFound {len(review['notFound'])}")
+    print(
+        f"review: noPapers {len(review['noPapers'])} / parseFailed {len(review['parseFailed'])}"
+        f" / notFound {len(review['notFound'])} / fetchFailed {len(review['fetchFailed'])}"
+    )
+    if review["fetchFailed"]:
+        names = ", ".join(e["professor"] for e in review["fetchFailed"])
+        print(f"fetchFailed 교수는 저장되지 않았습니다 — 다시 실행하면 자동으로 재시도됩니다: {names}")
     print(f"이번 실행: 교수 {run_professors}명 · 검색 {run_searched}건 · {elapsed_seconds:.0f}초")
     print(f"저장 위치: {OUTPUT_PATH}")
 
@@ -391,14 +489,29 @@ def main():
             print(f"{name}: 논문 0건 → review.noPapers 기록")
             continue
 
-        record, parse_failed, not_found = process_professor(
-            name, entries, f"[{position}/{total_with_papers}]", api_key
-        )
+        try:
+            record, parse_failed, not_found = process_professor(
+                name, entries, f"[{position}/{total_with_papers}]", api_key
+            )
+        except FetchFailedError as exc:
+            # 이 교수는 저장하지 않는다 — 재실행하면 자동으로 다시 시도된다.
+            # 같은 교수의 옛 실패 기록은 갈아끼워, 실패가 반복돼도 목록이 불어나지 않게 한다.
+            failed = state["review"]["fetchFailed"]
+            failed[:] = [e for e in failed if e["professor"] != name]
+            failed.append({"professor": name, "stage": exc.stage, "error": exc.cause})
+            save_state(state)
+            print(f"  → {name}: {exc.stage} 통신 실패 — fetchFailed 기록, 다음 교수로 계속")
+            continue
+
         state["professors"][name] = record
+        # 이번에 성공했으니 이전 실행에서 남았을 수 있는 fetchFailed 기록은 걷어낸다
+        state["review"]["fetchFailed"] = [
+            e for e in state["review"]["fetchFailed"] if e["professor"] != name
+        ]
         for citation in parse_failed:
             state["review"]["parseFailed"].append({"professor": name, "citation": citation[:80]})
-        for title in not_found:
-            state["review"]["notFound"].append({"professor": name, "title": title})
+        for item in not_found:
+            state["review"]["notFound"].append({"professor": name, **item})
         save_state(state)  # 교수 1명 끝날 때마다 즉시 저장 — 끊겨도 여기까지 보존
 
         run_professors += 1
