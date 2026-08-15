@@ -1,0 +1,42 @@
+{
+  "_comment": "수동 검수 대장 — 사람이 직접 확인해 확정한 사실만 적는다. 조립기(scripts/assembler/build_professors.py)가 병합의 '마지막 단계'에서 적용하므로 자동 수집값을 항상 이긴다. 항목 구조 설명은 data/input/README.md 참고.",
+  "updatedAt": "2026-08-16",
+  "overrides": [
+    {
+      "name": "김연동",
+      "department": null,
+      "field": "nameEn",
+      "value": "Yeon-Dong Kim",
+      "reason": "원광대 → 전북대 이직 확인. 자동 수집(C단계)에서는 영문명 미판정이었으나, 언론보도 대조로 동일 인물임을 확인했고 수집된 논문의 귀속도 정상이었다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "오신영",
+      "department": null,
+      "field": "department",
+      "value": "심장내과",
+      "reason": "병원 프로필 페이지가 비어 있어(교수명·진료과 표기 없음) 자동 수집이 불가능했다. 병원 명단 URL의 진료과 코드 mdclCd=IMCV로 소속을 확인했다. 표기는 같은 IMCV 진료과의 다른 교수 4명(김성원·김창훈·심가온·이주영)이 병원 프로필 원문에서 쓰는 '심장내과'로 맞춰 출처 일관성을 지켰다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "이창훈",
+      "department": "내과학교실(소화기)",
+      "field": "distinctPerson",
+      "value": true,
+      "reason": "동명이인 확인 — 소화기내과 이창훈. 병원 프로필(IMGI)·논문·영문명(Chang Hun Lee)은 모두 이 사람의 것이다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "이창훈",
+      "department": "내과학교실(혈액·종양)",
+      "field": "distinctPerson",
+      "value": true,
+      "reason": "동명이인 확인 — 혈액·종양내과 이창훈. 위 소화기내과 이창훈과 별개 인물이므로 별도 id를 부여하고, 이름으로 조회되는 자동 수집 자료(사진·전문분야·키워드·논문)를 물려받지 않는다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    }
+  ]
+}
