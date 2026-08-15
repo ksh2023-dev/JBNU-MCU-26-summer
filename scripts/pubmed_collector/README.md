@@ -120,7 +120,7 @@ python scripts/pubmed_collector/fetch_one.py
 2. 데이터 계약 1-2의 규칙 **"최신순 1편 + 인용수 상위 2편 = 3편"** 으로 대표 논문을 뽑아
 3. `data/output/professor_test_enriched.json` 파일로 저장합니다.
 
-- OpenAlex도 PubMed처럼 **무료이고 API 키가 필요 없습니다.**
+- OpenAlex는 무료지만 **2026-02-13부터 무료 계정의 API 키가 필요합니다.** (PubMed는 계속 키 없이 사용)
 - 인용수는 PMID로 조회하며, **50개씩 묶어서** 요청합니다 (논문 수만큼 호출하지 않기 위함).
 - OpenAlex에 등록되지 않은 논문의 인용수는 **`0`이 아니라 `null`** 로 둡니다 (계약 원칙 2 — 없는 값을 지어내지 않음).
 - 2단계도 **교수 1명 기준**입니다. (전체 교수 반복, `professors.json` 최종 조립은 3단계)
@@ -129,22 +129,28 @@ python scripts/pubmed_collector/fetch_one.py
 
 - 1단계와 동일 (Python 3.9 이상 · 인터넷 연결 · `requests`)
 - **1단계 결과 파일** `data/output/professor_test.json` — 없으면 위 1단계를 먼저 실행하세요.
+- **OpenAlex 무료 계정의 API 키** — 아래 1번에서 준비합니다.
 
 ## 실행 방법 (Windows PowerShell 기준)
 
 > 1단계와 마찬가지로 **저장소 루트 폴더**에서, 가상환경을 활성화한 상태로 실행하세요.
 
-### 1. 연락처 이메일 입력
+### 1. OpenAlex API 키 준비
 
-`scripts/pubmed_collector/enrich_citations.py` 파일을 열어 맨 위의 상수를 실제 이메일로 바꿉니다.
-(1단계에서 `AUTHOR_NAME_EN`을 바꾸던 것과 같은 방식입니다.)
+OpenAlex는 **2026-02-13부터 mailto(polite pool) 방식을 폐지**하고 모든 API 호출에 무료 계정의
+`api_key`를 요구합니다. 키는 공개 저장소에 커밋하지 않도록 코드가 아니라
+**저장소 루트의 `.env` 파일**에서 읽습니다.
 
-```python
-CONTACT_EMAIL = "hong@jbnu.ac.kr"   # ← "REPLACE_ME"를 실제 이메일로 교체
+1. [openalex.org](https://openalex.org/)에서 무료 계정을 만듭니다.
+2. 로그인 후 설정(Settings)에서 API 키를 복사합니다.
+3. 루트의 `.env.example`을 복사해 루트에 `.env` 파일을 만들고 값을 채웁니다.
+
+```text
+OPENALEX_API_KEY=발급받은키
 ```
 
-- OpenAlex는 요청에 연락처를 담으면 더 빠른 응답 풀(polite pool)로 처리해 줍니다. **API 예절**이라 반드시 채웁니다.
-- 바꾸지 않고 실행하면 안내 문구를 띄우고 멈춥니다.
+- `.env`는 `.gitignore`에 등록되어 있어 **커밋되지 않습니다.** (그래도 커밋 전 `git status`로 한 번 확인하세요)
+- 키 없이 실행하면 발급 방법을 안내하고 멈춥니다(exit 1).
 
 ### 2. 실행
 
@@ -207,8 +213,103 @@ python scripts/pubmed_collector/enrich_citations.py
 
 | 증상 | 원인과 해결 |
 | --- | --- |
-| `CONTACT_EMAIL을 실제 이메일로 바꾼 뒤 다시 실행하세요.` | 위 1번 단계를 건너뛴 것 → 이메일을 채우고 다시 실행 |
+| `OPENALEX_API_KEY를 찾지 못했습니다.` | 위 1번(API 키 준비)을 건너뛴 것 → 키를 발급받아 `.env`에 채우고 다시 실행 |
 | `입력 파일이 없습니다: ...professor_test.json` | 1단계를 아직 실행하지 않음 → 위 1단계를 먼저 실행 |
 | `OpenAlex 미등재`가 여러 건 보임 | 오류 아님. 해당 논문이 OpenAlex에 없는 것 → `citedByCount: null`, 인용 상위 후보에서 제외 |
 | 대표 논문이 3편보다 적음 | 정상. 논문이 3편 미만이거나, 인용수를 확보한 논문이 부족한 경우 (없는 값을 채우지 않음) |
 | 통신 오류 (`ConnectionError`, `HTTPError` 등) | 인터넷 연결 확인 후 잠시 뒤 재시도 |
+
+---
+
+# 3단계: 전체 교수(243명) 논문 파이프라인 (`build_all.py`)
+
+`data/input/professor_paper_lists.json`(교수 한글명 → 본인 프로필 페이지의 논문 인용문 목록)을 읽어,
+인용문마다 **논문 제목을 뽑아 PubMed에 제목으로 검색**하고(동명이인 위험이 낮은 방식),
+1단계(efetch 상세 수집)·2단계(OpenAlex 인용수 + 대표 3편 선정) 부품을 재사용해
+교수별 결과를 `data/output/professors_papers.json` 한 파일로 모읍니다.
+
+- 논문 인용문이 0건인 교수(82명)는 이번 단계에서 수집하지 않고, 빈 `papers`로 두고 `review.noPapers`에 이름만 기록합니다.
+- 제목 추출 실패는 `review.parseFailed`, 검색 실패(0건·같은 제목이 너무 많아 모호·검색 결과의 제목이 인용문과 불일치)는 `review.notFound`에 남깁니다 — 지어내지 않고 사람이 검수합니다.
+- 검색이 돌려준 논문은 **인용문에서 뽑은 제목과 대조 검증**한 뒤에만 수집합니다. 단어만 겹치는 남의 논문이 붙는 것을 막기 위한 안전장치입니다.
+- **교수 1명이 끝날 때마다 결과를 즉시 저장**하므로, 중간에 끊겨도 다시 실행하면 이어서 진행됩니다(재개).
+
+## 1. .env 준비 — 처음 한 번만
+
+OpenAlex API 키는 공개 저장소에 커밋하지 않도록 코드가 아니라 **저장소 루트의 `.env` 파일**에서 읽습니다.
+(2단계와 같은 키를 그대로 씁니다 — 발급 방법은 위 2단계 절의 "1. OpenAlex API 키 준비" 참고.
+PubMed 호출에는 키가 필요 없습니다.)
+
+1. 루트의 `.env.example`을 복사해 루트에 `.env` 파일을 만듭니다.
+2. `OPENALEX_API_KEY=` 값을 발급받은 키로 채웁니다.
+
+```text
+OPENALEX_API_KEY=발급받은키
+```
+
+- `.env`는 `.gitignore`에 등록되어 있어 **커밋되지 않습니다.** (그래도 커밋 전 `git status`로 한 번 확인하세요)
+- 값이 없으면 스크립트가 발급 방법을 안내하고 멈춥니다(exit 1).
+
+## 2. LIMIT 검증 — 전체 실행 전에 반드시
+
+`scripts/pubmed_collector/build_all.py` 상단의 상수로 **앞 N명만** 먼저 돌려 봅니다.
+
+```python
+LIMIT = 5   # 입력 목록 앞 5명만 처리 (None이면 전체 243명)
+```
+
+```powershell
+python scripts/pubmed_collector/build_all.py
+```
+
+- 진행 로그가 `[1/2] 오상민: 인용문 8건 → PMID 8건 확보` 형태로 나오고, 끝에 누적 통계가 출력되면 정상입니다.
+- 확인이 끝나면 `LIMIT = None`으로 되돌립니다.
+
+## 3. 전체 실행
+
+```powershell
+python scripts/pubmed_collector/build_all.py
+```
+
+- `LIMIT = None` 상태로 실행하면 243명 전체를 처리합니다.
+- PubMed 예절상 호출 사이 0.4초씩 쉬며 제목 검색이 약 2,000회라 **전체 실행은 수십 분**이 걸립니다. 터미널을 켜 둔 채 기다려 주세요.
+- 결과: `data/output/professors_papers.json` (`data/output/`은 `.gitignore` 대상이라 커밋되지 않습니다)
+
+## 4. 재개(resume) 방법
+
+- **그냥 같은 명령을 다시 실행하면 됩니다.** 교수 1명이 끝날 때마다 저장되므로, 이미 완료된 교수는 `이미 완료 — 건너뜀 (resume)` 로그와 함께 건너뛰고 나머지만 이어서 수집합니다.
+- 처음부터 전부 다시 수집하려면 파일 상단의 `FORCE_REFRESH = True`로 바꾸고 실행합니다. (기존 결과를 무시하고 덮어씀)
+
+## 저장되는 JSON 모양
+
+```json
+{
+  "collectedAt": "2026-08-15",
+  "professors": {
+    "오상민": {
+      "papers": [ { "title": "...", "journal": "...", "year": 2021, "pmid": "..." } ],
+      "latestPaper": { "pmid": "...", "publishedAt": "..." },
+      "allPapers": [ { "...": "전체 수집 논문 + citedByCount + abstract (내부 검수용)" } ],
+      "stats": { "cited": 8, "sourceEntries": 8, "collected": 7, "notFound": 1 }
+    }
+  },
+  "review": {
+    "noPapers": ["황정환", "..."],
+    "parseFailed": [ { "professor": "...", "citation": "인용문 앞 80자..." } ],
+    "notFound": [ { "professor": "...", "title": "..." } ]
+  }
+}
+```
+
+- `papers`(대표 3편)·`latestPaper`의 칸 이름은 계약 1-2 및 `data/sample/professors.sample.json`과 동일합니다 (다음 단계에서 그대로 조립).
+- `stats` — `sourceEntries` 입력 인용문 수 / `cited` 제목 추출에 성공해 검색을 시도한 수 / `collected` 수집 논문 수(PMID 중복 제거 후) / `notFound` 검색 실패 수
+- `review` — 사람이 검수할 목록. **오류가 아니라** "지어내지 않고 남겨 둔" 항목입니다.
+  한글 서적·국내지 인용문은 PubMed에 없어 `notFound`에 쌓이는 것이 정상입니다.
+
+## 자주 생기는 문제 (3단계)
+
+| 증상 | 원인과 해결 |
+| --- | --- |
+| `OPENALEX_API_KEY를 찾지 못했습니다.` | 위 1번(.env 준비)을 건너뛴 것 → 키를 발급받아 `.env`에 채우기 (발급 방법은 2단계 절 참고) |
+| 실행이 중간에 끊김 (통신 오류 등) | 같은 명령을 다시 실행 — 완료된 교수는 건너뛰고 이어서 진행(재개) |
+| `notFound`가 많아 보임 | 한글 서적·국내 학술지 인용문은 PubMed에 없는 것이 정상 → 검수 목록으로만 활용 |
+| 진행 로그의 한글이 깨져 보임 | 콘솔 인코딩 문제 → PowerShell에서 `chcp 65001` 실행 후 재시도 (수집 결과 파일은 항상 UTF-8로 정상 저장됨) |

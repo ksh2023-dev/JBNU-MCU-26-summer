@@ -17,13 +17,12 @@ from pathlib import Path
 
 import requests
 
-# ===== 입력 (실행 전 이 부분만 수정하면 됩니다) =================================
-# OpenAlex는 요청에 연락처 이메일을 담으면 더 빠른 응답 풀(polite pool)로 처리해 준다.
-# 1단계 fetch_one.py의 AUTHOR_NAME_EN과 같은 방식으로, 실행 전에 실제 이메일로 교체한다.
-CONTACT_EMAIL = "REPLACE_ME"   # 예: "hong@jbnu.ac.kr"
-# ==============================================================================
+# OpenAlex API 키는 코드가 아니라 저장소 루트의 .env 파일에서 읽는다 (OPENALEX_API_KEY 값).
+# 2026-02-13부터 OpenAlex가 mailto(polite pool) 방식을 폐지하고 모든 호출에 무료 계정의
+# api_key를 요구하며, 키를 공개 저장소에 커밋하지 않기 위해서이기도 하다. (양식: 루트 .env.example)
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
-# OpenAlex API 주소 — 무료이며 API 키가 필요 없다
+# OpenAlex API 주소 — 무료지만 2026-02-13부터 무료 계정의 API 키가 필요하다
 OPENALEX_URL = "https://api.openalex.org/works"
 
 # 한 번에 물어볼 PMID 개수. 한 건씩 부르면 논문 수만큼 호출하게 되므로,
@@ -41,6 +40,34 @@ INPUT_PATH = DATA_DIR / "professor_test.json"           # 1단계 산출물
 OUTPUT_PATH = DATA_DIR / "professor_test_enriched.json"  # 2단계 산출물
 
 
+def read_openalex_api_key():
+    """루트 .env에서 OPENALEX_API_KEY 값을 읽는다 (외부 라이브러리 없이 몇 줄짜리 파서).
+
+    API 키를 공개 저장소에 커밋하지 않기 위해 코드가 아니라 .env 파일에서 읽는다.
+    (.env는 .gitignore에 등록되어 있고, 양식은 루트 .env.example 참고)
+    3단계 build_all.py도 이 함수를 그대로 가져다 써서 같은 .env 값을 일관되게 쓴다.
+    """
+    api_key = ""
+    if ENV_PATH.exists():
+        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip() == "OPENALEX_API_KEY":
+                api_key = value.strip().strip('"').strip("'")
+    if not api_key:
+        raise SystemExit(
+            "OPENALEX_API_KEY를 찾지 못했습니다.\n"
+            "OpenAlex는 2026-02-13부터 모든 API 호출에 무료 계정의 api_key를 요구합니다.\n"
+            "발급 방법: openalex.org에서 무료 계정을 만들고 → 설정(Settings)에서 API 키를 복사한 뒤\n"
+            "→ 저장소 루트의 .env 파일에 아래 한 줄을 추가해 주세요 (양식: .env.example).\n"
+            "  OPENALEX_API_KEY=발급받은키\n"
+            "(.env는 .gitignore에 등록되어 있어 커밋되지 않습니다)"
+        )
+    return api_key
+
+
 def load_papers():
     """[1단계 결과 읽기] professor_test.json에서 논문 목록을 읽어 온다."""
     if not INPUT_PATH.exists():
@@ -56,7 +83,7 @@ def load_papers():
     return papers
 
 
-def fetch_cited_by_counts(pmids):
+def fetch_cited_by_counts(pmids, api_key):
     """[인용수 조회] OpenAlex에 PMID를 50개씩 묶어 물어보고 {pmid: 인용수} 표를 만든다.
 
     filter=pmid:1111|2222|3333 처럼 세로줄(|)로 이어 붙이면 한 번에 여러 건을 조회할 수 있다.
@@ -70,7 +97,7 @@ def fetch_cited_by_counts(pmids):
         params = {
             "filter": "pmid:" + "|".join(batch),
             "per-page": BATCH_SIZE,
-            "mailto": CONTACT_EMAIL,  # API 예절: 연락처를 남긴다
+            "api_key": api_key,  # 2026-02-13부터 모든 호출에 필수 (mailto/polite pool 폐지)
         }
         resp = requests.get(OPENALEX_URL, params=params, timeout=60)
         resp.raise_for_status()  # 통신 실패(4xx/5xx)면 여기서 바로 멈춰서 알린다
@@ -174,18 +201,14 @@ def save_result(papers_with_citations, selected_papers, latest_paper):
 
 
 if __name__ == "__main__":
-    # 실행 전 안전장치: 연락처 이메일을 아직 바꾸지 않았으면 안내하고 멈춘다
-    if CONTACT_EMAIL == "REPLACE_ME":
-        raise SystemExit(
-            "enrich_citations.py 상단의 CONTACT_EMAIL을 실제 이메일로 바꾼 뒤 다시 실행하세요. "
-            '(예: CONTACT_EMAIL = "hong@jbnu.ac.kr")'
-        )
+    # 실행 전 안전장치: API 키가 없으면 발급 방법을 안내하고 멈춘다 (exit 1)
+    api_key = read_openalex_api_key()
 
     papers = load_papers()
     if not papers:
         raise SystemExit("1단계 결과에 논문이 0건입니다. fetch_one.py를 먼저 확인해 주세요.")
 
-    counts = fetch_cited_by_counts([p["pmid"] for p in papers])
+    counts = fetch_cited_by_counts([p["pmid"] for p in papers], api_key)
     papers_with_citations = attach_citations(papers, counts)
     selected_papers, latest_paper = select_representative_papers(papers_with_citations)
     save_result(papers_with_citations, selected_papers, latest_paper)
