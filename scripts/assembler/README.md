@@ -69,6 +69,16 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
 
 - **id는 영원히 불변.** 프론트 찜이 localStorage에 id로 저장되므로, 재실행할 때는 id 대장을
   먼저 읽어 기존 id를 재사용하고 새 교수에게만 다음 번호를 준다. 자세한 규칙은 `data/input/README.md`.
+- **소속이 바뀐 교수의 id 승계는 사람이 확인했을 때만 한다.** 이름이 같고 소속만 다르면 같은 사람이
+  옮긴 것처럼 보이지만, 퇴직자가 빠지고 같은 이름의 신규 교수가 들어온 경우도 똑같이 보인다.
+  그 상태로 id를 물려주면 **예전 찜이 다른 사람을 가리킨다.** 그래서 수동 검수 대장에 그 교수의
+  `department` 확정 항목(또는 `field: "idInheritance"` 승계 허용 항목)이 있을 때만 승계하고,
+  없으면 새 id를 주고 `review.idInheritanceHeld`에 "승계 보류(사람 확인 필요)"로 남긴다.
+- **병원 명단에만 있는 교수 67명은 교수 구분을 추정한다** — 의대 홈페이지에 없어 근거가 없는데
+  계약상 `professorType`은 값이 필수라서다. 추정 사실은 `professors_extra.json`의
+  `professorTypeInferred: true`와 `review.professorTypeInferred`(전원 목록)에 남기고,
+  계약 파일에는 계약 밖 칸을 만들지 않는다. **포함 여부 자체는 팀 결정 대기**이며
+  `INCLUDE_HOSPITAL_ONLY`로 끄면 제외 명단이 `review.excludedHospitalOnly`에 남는다.
 - **수동 검수 대장이 자동 수집을 이긴다.** 병합이 모두 끝난 뒤 마지막에 적용한다.
 - **동명이인은 이름으로 수집된 자료를 물려받지 않는다.** 사진·전문분야·키워드·논문은 전부
   '병원 명단의 이름'을 키로 모은 것이라, 병원 명단에 없는 동명이인에게는 붙이지 않는다.
@@ -86,6 +96,7 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
 | 상수 | 기본값 | 뜻 |
 | --- | --- | --- |
 | `EXCLUDE_DENTAL` | `True` | 치과 계열 제외 (제외 명단은 extra에 남긴다) |
+| `INCLUDE_HOSPITAL_ONLY` | `True` | 의대 명단에 없는 병원 전용 교수 67명 포함 — **팀 결정 대기**. 이들만 교수 구분을 추정하므로, 추정이 부적절하다는 결론이 나면 `False`로 바꾼다 (기본값이 `True`인 이유: 빼면 병원 교수 67명이 검색에서 통째로 사라져 MVP 시연이 불가능하다) |
 | `MERGE_CROSS_APPOINTMENTS` | `True` | 두 교실에 걸친 사람을 한 명으로 합침 |
 | `DEPARTMENT_INCLUDE_DIVISION` | `True` | 소속에 분과 표기 |
 | `DEPARTMENT_JOIN_CROSS_APPOINTMENTS` | `True` | 교차 겸직은 두 교실을 `CROSS_APPOINTMENT_SEPARATOR`(` · `)로 이어 표기 |

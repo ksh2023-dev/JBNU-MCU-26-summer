@@ -37,6 +37,132 @@
       "reason": "동명이인 확인 — 혈액·종양내과 이창훈. 위 소화기내과 이창훈과 별개 인물이므로 별도 id를 부여하고, 이름으로 조회되는 자동 수집 자료(사진·전문분야·키워드·논문)를 물려받지 않는다.",
       "confirmedBy": "이지훈",
       "date": "2026-08-16"
+    },
+    {
+      "name": "황주희",
+      "department": null,
+      "field": "nameEn",
+      "value": "Joo-Hee Hwang",
+      "reason": "자동 판정은 경쟁 후보 Jeong-Hwan Hwang과 인용문 등장 비율이 1.00으로 같아 확정하지 못했다(둘 다 인용문 이니셜이 'Hwang JH'로 같다). 경쟁 후보는 명단 안의 다른 교수인 황정환이며, 관측 논문도 11편 대 6편으로 갈린다. 황주희의 로마자 표기가 Joo-Hee Hwang임을 확인했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "김경민",
+      "department": null,
+      "field": "nameEn",
+      "value": "Kyoung Min Kim",
+      "reason": "자동 판정은 1위 2편 대 2위(Hyung Jin Kim) 1편으로 margin 규칙(2편 차) 미달이라 확정하지 못했다. 한글 이름의 로마자 표기와 대조해 Kyoung Min Kim으로 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "김상욱",
+      "department": null,
+      "field": "nameEn",
+      "value": "Sang Wook Kim",
+      "reason": "자동 판정은 Se Lim Kim과 2편씩 동률이라 확정하지 못했다. 상욱 = Sang Wook 대조로 본인을 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "이민로",
+      "department": null,
+      "field": "nameEn",
+      "value": "Min Ro Lee",
+      "reason": "자동 판정은 1위 2편 대 2위(Chang Ho Lee) 1편으로 margin 규칙 미달이었다. 민로 = Min Ro 대조로 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "이식",
+      "department": null,
+      "field": "nameEn",
+      "value": "Sik Lee",
+      "reason": "자동 판정은 전북대 소속으로 관측된 논문이 1편뿐이라(2편 이상 조건 미달) 확정하지 못했다. 식 = Sik 대조로 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "김원",
+      "department": null,
+      "field": "nameEn",
+      "value": "Won Kim",
+      "reason": "자동 판정은 Hyeongwan Kim과 2편씩 동률이라 확정하지 못했다. 경쟁 후보는 명단 안의 다른 교수인 김형완이며, 원 = Won 대조로 본인을 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "왕성일",
+      "department": null,
+      "field": "nameEn",
+      "value": "Sung Il Wang",
+      "reason": "자동 판정은 Seong-Il Wang과 인용문 등장 비율이 1.00으로 같아 확정하지 못했다. 두 표기는 같은 사람의 로마자 표기 변형이며(관측 8편 대 1편), 다수 표기인 Sung Il Wang으로 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "김종승",
+      "department": null,
+      "field": "nameEn",
+      "value": "Jong Seung Kim",
+      "reason": "자동 판정과 같은 값이며, 사람이 한글 이름의 로마자 표기와 대조해 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "이영근",
+      "department": null,
+      "field": "nameEn",
+      "value": "Young-Keun Lee",
+      "reason": "자동 판정은 1위 2편 대 2위(Malrey Lee) 1편으로 margin 규칙 미달이었다. 영근 = Young-Keun 대조로 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "박진",
+      "department": null,
+      "field": "nameEn",
+      "value": "Jin Park",
+      "reason": "자동 판정과 같은 값이며, 사람이 한글 이름의 로마자 표기와 대조해 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "박성주",
+      "department": null,
+      "field": "nameEn",
+      "value": "Seong Ju Park",
+      "reason": "자동 판정은 Seoung Ju Park과 2편씩 동률이라 확정하지 못했다. 두 표기는 같은 사람의 로마자 표기 변형이며, 성주 = Seong Ju 표기로 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "이환진",
+      "department": null,
+      "field": "nameEn",
+      "value": "Hwan Jin Lee",
+      "reason": "자동 판정은 1위 5편 대 2위(Yong Chul Lee) 4편으로 margin 규칙 미달이었다. 경쟁 후보는 명단 안의 다른 교수인 이용철·이흥범이며, 환진 = Hwan Jin 대조로 본인을 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "박승용",
+      "department": null,
+      "field": "nameEn",
+      "value": "Seung Yong Park",
+      "reason": "자동 판정과 같은 값이다. 경쟁 후보로 잡히던 Seoung Ju Park은 명단 안의 다른 교수인 박성주이며, 승용 = Seung Yong 대조로 본인을 확정했다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
+    },
+    {
+      "name": "김이식",
+      "department": null,
+      "field": "email",
+      "value": "dr.kimesik@gmail.com",
+      "reason": "로컬파트가 성(kim) + 이름(esik = 이식)으로 구성되어 본인 주소임을 확인했다. C단계 자동 규칙은 성 단독 근거를 배제하므로(동성이 흔해 단독으로는 약하다) 자동으로는 보류됐고, 사람이 확인해 확정한다. 주소 값은 professors_enriched_meta.json의 review에 보존된 값을 그대로 옮겼다.",
+      "confirmedBy": "이지훈",
+      "date": "2026-08-16"
     }
   ]
 }

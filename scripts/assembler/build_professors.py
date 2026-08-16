@@ -36,7 +36,15 @@ DEPARTMENT_JOIN_CROSS_APPOINTMENTS = True  # 교차 겸직은 두 교실을 함�
 CROSS_APPOINTMENT_SEPARATOR = " · "
 FETCH_HOSPITAL_DEPARTMENT = True    # 병원 명단 전용 교수의 진료과를 병원 프로필에서 조회
 USE_DEPARTMENT_CACHE = True         # 조회 결과를 캐시에 남겨 재실행 시 재조회하지 않음
-HOSPITAL_ONLY_PROFESSOR_TYPE = "임상의학"  # 의대 명단에 없는 병원 교수의 교수 구분 (추정 → review 기록)
+# 의대 명단에 없고 병원 명단에만 있는 교수(67명)를 포함할지 — **팀 결정 대기**.
+# 이들은 의대 홈페이지에 교수 구분이 없어 아래 HOSPITAL_ONLY_PROFESSOR_TYPE으로 '추정'해야 한다.
+# 계약상 professorType은 값이 필수(백엔드 스키마가 문자열 요구)라 null을 넣을 수 없기 때문이다.
+# 추정 사실은 professors_extra.json의 professorTypeInferred 플래그와 review 목록에 남기고,
+# 계약 파일(professors.json)에는 계약 밖 칸을 추가하지 않는다.
+# 기본값 True — 빼면 병원 교수 67명이 검색에서 통째로 사라져 MVP 시연이 불가능하다.
+# 추정이 부적절하다는 결론이 나면 False로 바꾼다 (제외 명단은 review.excludedHospitalOnly에 남는다).
+INCLUDE_HOSPITAL_ONLY = True
+HOSPITAL_ONLY_PROFESSOR_TYPE = "임상의학"  # 위 교수들의 교수 구분 (추정 → extra 플래그 + review 기록)
 PAPERS_LIMIT = 3                    # 대표 논문 수 (계약 1-2: 최신 1편 + 인용 상위 2편)
 
 SLEEP_SECONDS = 0.5                 # 서버 예절: 병원 페이지 호출 사이 대기
@@ -74,8 +82,12 @@ PROFESSOR_TYPES = ("기초의학", "임상의학", "의학교육학", "인문사
 # 계약 밖이지만 수동 검수 대장으로 고칠 수 있는 필드 (professors_extra.json 전용)
 EXTRA_ONLY_FIELDS = ("nameEn",)
 
+# 값을 바꾸는 항목이 아니라 '사람이 확인한 사실'을 적는 특수 항목 (따로 검증·소비된다)
+ASSERTION_FIELDS = ("distinctPerson", "idInheritance")
+
 REVIEW_KEYS = (
     "professorTypeInferred",        # 교수 구분을 추정한 교수 (계약 필드는 오염시키지 않는다)
+    "excludedHospitalOnly",         # INCLUDE_HOSPITAL_ONLY=False로 제외한 병원 전용 교수
     "departmentFetchFailed",        # 병원 프로필에서 진료과를 못 읽은 교수
     "droppedNoDepartment",          # 소속을 끝내 확보하지 못해 제외한 교수
     "crossAppointmentMerged",       # 두 교실에 걸친 사람을 한 명으로 합친 기록
@@ -86,6 +98,7 @@ REVIEW_KEYS = (
     "manualOverridesApplied",
     "manualOverridesUnmatched",
     "idDepartmentChanged",
+    "idInheritanceHeld",            # 이름은 같은데 소속이 달라 id 승계를 보류한 교수
     "idAmbiguous",
 )
 
@@ -320,6 +333,8 @@ def new_record(name, department, department_source, professor_type, professor_ty
         "papers": [],
         # ── 계약 밖 (professors_extra.json으로 나간다) ──
         "_extra": {
+            # 교수 구분을 의대 명단에서 확인하지 못하고 추정했다는 표시 (계약 파일에는 넣지 않는다)
+            "professorTypeInferred": professor_type_inferred,
             "nameEn": None,
             "nameEnVariants": [],
             "keywordsCandidateAll": [],
@@ -412,7 +427,19 @@ def build_records(sources, review):
                    if not any(r.get("matchedInHospitalList") for r in p["records"])]
     hospital_only = [n for n in hospital_names if n not in matched_by_name]
 
+    if not INCLUDE_HOSPITAL_ONLY:
+        # 팀 결정으로 병원 전용 교수를 빼는 경우 — 삭제가 아니라 목록으로 남긴다
+        for name in hospital_only:
+            review["excludedHospitalOnly"].append({
+                "name": name,
+                "note": "의대 명단에 없어 교수 구분을 추정해야 하는 교수 — "
+                        "INCLUDE_HOSPITAL_ONLY=False로 제외했다",
+            })
+        hospital_names = [n for n in hospital_names if n not in set(hospital_only)]
+        hospital_only = []
+
     print(f"[3] 대상 교수 결정: 병원 명단 {len(pages)}명 - 치과 {len(excluded_dental)}명 "
+          f"- 병원 전용 제외 {len(review['excludedHospitalOnly'])}명 "
           f"+ 의대 신규 {len(new_persons)}명 (의대 명단 사람 {len(persons)}명 기준)")
 
     fetched = resolve_hospital_departments(hospital_only, pages, review)
@@ -459,8 +486,10 @@ def apply_overrides(records, overrides, review):
     """사람이 확정한 값을 마지막에 덮어쓴다. 적용·미적용을 모두 review에 남긴다."""
     for item in overrides.get("overrides") or []:
         field = item.get("field")
-        if field == "distinctPerson":
-            continue  # 값 변경이 아니라 확인 사실 — id 부여 뒤 verify_distinct_persons()가 검증한다
+        if field in ASSERTION_FIELDS:
+            # 값 변경이 아니라 확인 사실 — distinctPerson은 verify_distinct_persons()가,
+            # idInheritance는 assign_ids()가 각각 소비한다
+            continue
 
         name, target_department = item.get("name"), item.get("department")
         targets = [r for r in records if r["name"] == name
@@ -515,7 +544,28 @@ def verify_distinct_persons(records, overrides, review):
 
 # ── id 대장 ─────────────────────────────────────────────────────────
 
-def assign_ids(records, review):
+def inheritance_basis(record, overrides):
+    """소속이 바뀐 교수의 id를 승계해도 되는 근거가 있는지 — 없으면 None.
+
+    이름이 같고 소속만 다르면 '같은 사람이 옮긴 것'처럼 보이지만, 퇴직자가 빠지고 같은 이름의
+    신규 교수가 들어온 경우도 똑같이 보인다. 그때 id를 물려주면 예전 찜(localStorage)이
+    엉뚱한 사람을 가리키게 된다. 그래서 자동으로 판단하지 않고, 사람이 확인한 근거가 있을 때만 승계한다.
+      - manual_overrides에 그 교수의 department 확정 항목이 있고 값이 지금 소속과 같을 때
+      - 또는 명시적 승계 허용 항목(field: "idInheritance", value: true)이 있을 때
+    """
+    for item in overrides.get("overrides") or []:
+        if item.get("name") != record["name"]:
+            continue
+        target = item.get("department")
+        if item.get("field") == "department" and item.get("value") == record["department"]:
+            return "수동 검수 대장의 department 확정 항목"
+        if (item.get("field") == "idInheritance" and item.get("value")
+                and target in (None, record["department"])):
+            return "수동 검수 대장의 idInheritance 승계 허용 항목"
+    return None
+
+
+def assign_ids(records, review, overrides):
     """id 대장을 읽어 기존 id를 재사용하고, 새 교수에게만 다음 번호를 준다.
 
     id는 프론트 찜(localStorage)이 붙잡고 있는 유일한 열쇠라 절대 바뀌면 안 된다.
@@ -547,22 +597,36 @@ def assign_ids(records, review):
 
         candidates = [e for e in (previous_by_name.get(record["name"]) or [])
                       if e["id"] not in claimed]
-        if len(candidates) == 1:                    # ② 소속만 바뀐 같은 사람 → id 유지
+        held = False
+        if len(candidates) == 1:
             entry = candidates[0]
-            previous = entry.get("department")
-            entry.setdefault("departmentHistory", []).append({"department": previous, "until": today})
-            entry["department"] = record["department"]
-            by_key[key] = entry
-            record["id"] = entry["id"]
-            claimed.add(entry["id"])
-            moved += 1
-            review["idDepartmentChanged"].append({
-                "id": entry["id"], "name": record["name"],
-                "from": previous, "to": record["department"],
+            basis = inheritance_basis(record, overrides)
+            if basis:                               # ② 사람이 확인한 소속 변경 → id 승계
+                previous = entry.get("department")
+                entry.setdefault("departmentHistory", []).append(
+                    {"department": previous, "until": today})
+                entry["department"] = record["department"]
+                by_key[key] = entry
+                record["id"] = entry["id"]
+                claimed.add(entry["id"])
+                moved += 1
+                review["idDepartmentChanged"].append({
+                    "id": entry["id"], "name": record["name"],
+                    "from": previous, "to": record["department"], "basis": basis,
+                })
+                continue
+            # 근거가 없으면 승계하지 않는다 — 퇴직자와 신규 동명이인이 교체된 경우
+            # 예전 찜이 다른 사람에게 넘어가기 때문이다
+            held = True
+            review["idInheritanceHeld"].append({
+                "name": record["name"], "department": record["department"],
+                "existing": {"id": entry["id"], "department": entry.get("department")},
+                "note": "동일 이름·다른 소속 — 승계 보류(사람 확인 필요). 새 id를 부여했다.",
+                "howTo": "같은 사람이 맞으면 manual_overrides.json에 department 확정 항목이나 "
+                         'field: "idInheritance" 항목을 넣고 다시 실행한다.',
             })
-            continue
 
-        if candidates:                              # ③ 동명이인인데 소속이 안 맞음 → 새 번호 + 기록
+        if candidates and not held:                 # ③ 동명이인인데 소속이 안 맞음 → 새 번호 + 기록
             review["idAmbiguous"].append({
                 "name": record["name"], "department": record["department"],
                 "note": "같은 이름의 대장 항목이 여러 개인데 소속이 일치하지 않아 새 번호를 부여했다",
@@ -586,19 +650,66 @@ def assign_ids(records, review):
         "nextNumber": next_number,
         "entries": entries,
     })
-    print(f"[6] id 부여: 재사용 {reused}명 / 소속변경 유지 {moved}명 / 신규 {created}명 "
-          f"(대장 누적 {len(entries)}건, 다음 번호 P-{next_number:03d})")
+    print(f"[6] id 부여: 재사용 {reused}명 / 소속변경 승계 {moved}명 / 신규 {created}명 "
+          f"(승계 보류 {len(review['idInheritanceHeld'])}명, 대장 누적 {len(entries)}건, "
+          f"다음 번호 P-{next_number:03d})")
     return {"reused": reused, "moved": moved, "new": created, "registrySize": len(entries)}
 
 
 # ── 정합 검사 ───────────────────────────────────────────────────────
 
-def check_integrity(contract_records, sources, review, overrides):
+def check_overrides_applied(records, overrides, problems):
+    """수동 검수 대장이 '의도한 그 사람'에게 적용됐는지 검증한다.
+
+    동명이인이 있는데 department 지정이 없으면 엉뚱한 사람에게 적용될 수 있으므로,
+    대상 지정과 실제 반영값을 모두 확인한다.
+    """
+    checked = 0
+    for item in overrides.get("overrides") or []:
+        name, target, field = item.get("name"), item.get("department"), item.get("field")
+        same_name = [r for r in records if r["name"] == name]
+        targets = [r for r in same_name if target is None or r["department"] == target]
+
+        if not same_name:
+            problems.append(f"수동검수 {name}/{field}: 그 이름의 교수가 명단에 없다")
+            continue
+        if len(same_name) > 1 and target is None:
+            problems.append(f"수동검수 {name}/{field}: 동명이인 {len(same_name)}명인데 "
+                            f"department 지정이 없어 대상이 모호하다")
+            continue
+        if len(targets) != 1:
+            problems.append(f"수동검수 {name}/{field}: 대상이 {len(targets)}명이다 "
+                            f"(department={target!r} — 정확히 1명이어야 한다)")
+            continue
+        if field in ASSERTION_FIELDS:
+            continue  # 값 변경이 아님 — verify_distinct_persons()·assign_ids()가 따로 검증한다
+
+        record = targets[0]
+        actual = record["_extra"].get(field) if field in EXTRA_ONLY_FIELDS else record.get(field)
+        if actual != item.get("value"):
+            problems.append(f"수동검수 {name}/{field}: 확정값이 반영되지 않았다 "
+                            f"({actual!r} != {item.get('value')!r})")
+        checked += 1
+    return checked
+
+
+def check_integrity(contract_records, records, sources, review, overrides):
     """자체 정합 검사. 위반은 모아서 한 번에 보고한다."""
     problems = []
     allowed = set(load_json(SAMPLE_PATH)["professors"][0].keys())  # 샘플이 곧 계약 모양
-    override_values = {(o.get("name"), o.get("field")): o.get("value")
-                       for o in (overrides.get("overrides") or [])}
+    overrides_checked = check_overrides_applied(records, overrides, problems)
+
+    # 동명이인에게 남의 확정값이 통과되지 않도록 대상 지정(department)까지 키에 넣는다
+    override_values = {}
+    for item in overrides.get("overrides") or []:
+        key = (item.get("name"), item.get("department"), item.get("field"))
+        override_values.setdefault(key, []).append(item.get("value"))
+
+    def allowed_override(name, department, field):
+        """이 교수에게 실제로 적용될 수 있는 확정값만 돌려준다."""
+        values = list(override_values.get((name, department, field)) or [])
+        values += list(override_values.get((name, None, field)) or [])  # 이름만 지정한 항목
+        return values
 
     ids = [r["id"] for r in contract_records]
     duplicated = sorted({i for i in ids if ids.count(i) > 1})
@@ -652,23 +763,33 @@ def check_integrity(contract_records, sources, review, overrides):
                     origin["title"], origin.get("journal"), origin.get("year")):
                 problems.append(f"{name}: 논문 값이 원본과 다르다 (pmid {paper['pmid']})")
 
-        if set(record["specialties"]) - set((sources["specialties"].get(name) or {}).get("specialties") or []) \
-                - set(override_values.get((name, "specialties")) or []):
+        department = record["department"]
+        confirmed_specialties = {v for values in allowed_override(name, department, "specialties")
+                                 for v in (values or [])}
+        if set(record["specialties"]) \
+                - set((sources["specialties"].get(name) or {}).get("specialties") or []) \
+                - confirmed_specialties:
             problems.append(f"{name}: 원본에 없는 전문분야가 들어 있다")
-        if set(record["keywords"]) - set((sources["meta"].get(name) or {}).get("keywordsCandidate") or []) \
-                - set(override_values.get((name, "keywords")) or []):
+        confirmed_keywords = {v for values in allowed_override(name, department, "keywords")
+                              for v in (values or [])}
+        if set(record["keywords"]) \
+                - set((sources["meta"].get(name) or {}).get("keywordsCandidate") or []) \
+                - confirmed_keywords:
             problems.append(f"{name}: 원본에 없는 키워드가 들어 있다")
         for field, source_value in (("profileImageUrl", sources["images"].get(name)),
                                     ("email", (sources["meta"].get(name) or {}).get("email")),
                                     ("homepageUrl", sources["pages"].get(name))):
             value = record[field]
-            if value is not None and value != source_value and value != override_values.get((name, field)):
+            if value is not None and value != source_value \
+                    and value not in allowed_override(name, department, field):
                 problems.append(f"{name}: {field} 값이 원본과 다르다")
 
     print("[7] 정합 검사")
     print(f"    id 중복                 : {len(duplicated)}건")
     print(f"    pmid 없는 논문           : {no_pmid}건")
     print(f"    계약 밖 칸 사용          : {contract_violation}건")
+    print(f"    수동검수 대상·반영 확인   : {overrides_checked}건 "
+          f"(확인 사실 항목 {len([o for o in (overrides.get('overrides') or []) if o.get('field') in ASSERTION_FIELDS])}건 별도 검증)")
     print(f"    지어낸 값·null 규칙 위반  : "
           f"{len([p for p in problems if '원본' in p or '빈 문자열' in p])}건")
     print(f"    위반 총계               : {len(problems)}건")
@@ -686,6 +807,8 @@ def report(contract_records, review, excluded_dental, hospital_total,
     print("[9] 최종 교수 수 합산식")
     print(f"    병원 명단(professor_pages)                : {hospital_total}명")
     print(f"    - 치과 계열 제외 (EXCLUDE_DENTAL={EXCLUDE_DENTAL})     : -{len(excluded_dental)}명")
+    print(f"    - 병원 전용 제외 (INCLUDE_HOSPITAL_ONLY={INCLUDE_HOSPITAL_ONLY}) : "
+          f"-{len(review['excludedHospitalOnly'])}명")
     print(f"    = 병원 명단 대상                          : {hospital_target_count}명")
     print(f"    + 의대 명단 신규(병원 명단에 없는 교수)     : +{new_person_count}명")
     print(f"    - 소속 미확보로 제외                      : -{len(review['droppedNoDepartment'])}명")
@@ -770,12 +893,12 @@ def main():
         })
     records = [r for r in records if (r["department"] or "").strip()]
 
-    id_stats = assign_ids(records, review)
+    id_stats = assign_ids(records, review, overrides)
     verify_distinct_persons(records, overrides, review)
 
     contract_records = [{k: v for k, v in r.items() if not k.startswith("_")} for r in records]
     contract_records.sort(key=lambda r: (r["name"], r["department"]))
-    problems = check_integrity(contract_records, sources, review, overrides)
+    problems = check_integrity(contract_records, records, sources, review, overrides)
 
     print("[8] 출력 저장 중...")
     save_json(OUTPUT_PATH, {
@@ -800,6 +923,7 @@ def main():
         "sourceCollectedAt": source_dates,
         "settings": {
             "EXCLUDE_DENTAL": EXCLUDE_DENTAL,
+            "INCLUDE_HOSPITAL_ONLY": INCLUDE_HOSPITAL_ONLY,
             "MERGE_CROSS_APPOINTMENTS": MERGE_CROSS_APPOINTMENTS,
             "DEPARTMENT_INCLUDE_DIVISION": DEPARTMENT_INCLUDE_DIVISION,
             "FETCH_HOSPITAL_DEPARTMENT": FETCH_HOSPITAL_DEPARTMENT,
