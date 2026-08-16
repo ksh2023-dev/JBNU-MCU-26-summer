@@ -272,11 +272,14 @@ def resolve_hospital_matches(professors, hospital_by_norm, review):
 
     - 이름이 한쪽에만 있으면 그대로 True/False.
     - 크롤 결과에 같은 이름이 여럿이면(겸직 게시 또는 동명이인 가능):
-      * 전화번호가 모두 같은 값(비어있지 않음)이면 같은 사람이 여러 교실에 겸직으로
-        게시된 것으로 보고 전원 매칭시킨다 (병원 홈페이지에 별도로 조회하지 않는다).
-      * 전화번호가 다르거나 없으면 동명이인일 수 있다 — 병원 프로필의 실제 진료과를
-        읽어(fetch_hospital_department) division·specialty와 겹치는 레코드만 매칭시키고,
-        나머지는 신규로 둔다. 두 레코드 모두에 "동명이인 확인됨" 메모를 남긴다.
+      * 후보 **전원에게 전화번호가 있고** 그 값이 전부 같을 때만 같은 사람이 여러 교실에
+        겸직으로 게시된 것으로 보고 전원 매칭시킨다 (병원 홈페이지에 별도로 조회하지 않는다).
+        하나라도 번호가 비어 있으면 "모른다"를 "같다"로 취급하지 않고 아래 동명이인 경로로
+        넘긴다 — 번호가 있는 한 명만 보고 겸직으로 단정하면 서로 다른 두 사람이 한 사람으로
+        합쳐져 버린다.
+      * 전화번호가 서로 다르거나 하나라도 비어 있으면 동명이인일 수 있다 — 병원 프로필의
+        실제 진료과를 읽어(fetch_hospital_department) division·specialty와 겹치는 레코드만
+        매칭시키고, 나머지는 신규로 둔다. 두 레코드 모두에 "동명이인 확인됨" 메모를 남긴다.
       * 겹치는 레코드가 0개나 2개 이상이면 구분할 수 없으므로 review에 기록하고
         전원 매칭 안 함(False)으로 둔다 — 확신 없는 매칭은 지어내지 않는다(계약 원칙 2).
     """
@@ -294,14 +297,16 @@ def resolve_hospital_matches(professors, hospital_by_norm, review):
             candidates[0]["matchedInHospitalList"] = True
             continue
 
-        phones = {p["phone"] for p in candidates if p["phone"]}
-        if len(phones) == 1:
-            # 전화번호가 모두 같다 — 같은 사람이 여러 교실에 겸직으로 게시된 것
+        phones = [p["phone"] for p in candidates]
+        if all(phones) and len(set(phones)) == 1:
+            # 전원 번호가 있고 값이 모두 같다 — 같은 사람이 여러 교실에 겸직으로 게시된 것.
+            # 비어 있는 번호는 여기서 걸러내지 않는다: 한 명만 번호가 있고 나머지가 비었을 때
+            # "같은 번호"로 세면 모르는 것을 같다고 단정하는 셈이라 동명이인이 합쳐진다.
             for p in candidates:
                 p["matchedInHospitalList"] = True
             continue
 
-        # 동명 레코드의 전화번호가 다르거나 비어 있다 — 동명이인 가능성
+        # 동명 레코드의 전화번호가 다르거나 하나라도 비어 있다 — 동명이인 가능성
         dept_text = fetch_hospital_department(hosp["url"], review, name)
         if dept_text is None:
             for p in candidates:
