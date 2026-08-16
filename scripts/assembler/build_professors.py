@@ -36,15 +36,15 @@ DEPARTMENT_JOIN_CROSS_APPOINTMENTS = True  # 교차 겸직은 두 교실을 함�
 CROSS_APPOINTMENT_SEPARATOR = " · "
 FETCH_HOSPITAL_DEPARTMENT = True    # 병원 명단 전용 교수의 진료과를 병원 프로필에서 조회
 USE_DEPARTMENT_CACHE = True         # 조회 결과를 캐시에 남겨 재실행 시 재조회하지 않음
-# 의대 명단에 없고 병원 명단에만 있는 교수(67명)를 포함할지 — **팀 결정 대기**.
-# 이들은 의대 홈페이지에 교수 구분이 없어 아래 HOSPITAL_ONLY_PROFESSOR_TYPE으로 '추정'해야 한다.
-# 계약상 professorType은 값이 필수(백엔드 스키마가 문자열 요구)라 null을 넣을 수 없기 때문이다.
-# 추정 사실은 professors_extra.json의 professorTypeInferred 플래그와 review 목록에 남기고,
-# 계약 파일(professors.json)에는 계약 밖 칸을 추가하지 않는다.
-# 기본값 True — 빼면 병원 교수 67명이 검색에서 통째로 사라져 MVP 시연이 불가능하다.
-# 추정이 부적절하다는 결론이 나면 False로 바꾼다 (제외 명단은 review.excludedHospitalOnly에 남는다).
-INCLUDE_HOSPITAL_ONLY = True
-HOSPITAL_ONLY_PROFESSOR_TYPE = "임상의학"  # 위 교수들의 교수 구분 (추정 → extra 플래그 + review 기록)
+# 의대 명단에 없고 병원 명단에만 있는 교수(67명)를 포함할지.
+# 2026-08-16 회의 결정: 의대 공식 명단 기준 — 제외한다(False).
+# 이들은 의대 홈페이지에 없어 교수 구분의 근거가 없고, 계약상 professorType은 값이 필수라
+# 아래 HOSPITAL_ONLY_PROFESSOR_TYPE으로 '추정'해야만 수록할 수 있었다. 근거 없는 값을 넣지 않기로 했다.
+# 제외 명단은 삭제하지 않고 review.excludedHospitalOnly에 남긴다 (범위가 다시 바뀔 수 있다).
+# True로 되돌리면 추정 사실이 professors_extra.json의 professorTypeInferred 플래그와
+# review.professorTypeInferred에 기록되며, 계약 파일에는 계약 밖 칸을 만들지 않는다.
+INCLUDE_HOSPITAL_ONLY = False
+HOSPITAL_ONLY_PROFESSOR_TYPE = "임상의학"  # 위를 True로 되돌릴 때만 쓰인다 (추정 → extra 플래그 + review)
 PAPERS_LIMIT = 3                    # 대표 논문 수 (계약 1-2: 최신 1편 + 인용 상위 2편)
 
 SLEEP_SECONDS = 0.5                 # 서버 예절: 병원 페이지 호출 사이 대기
@@ -97,6 +97,7 @@ REVIEW_KEYS = (
     "latestPaperMissingWithPapers",
     "manualOverridesApplied",
     "manualOverridesUnmatched",
+    "manualOverridesOutOfScope",    # 대상 교수가 이번 범위에서 빠져 적용되지 않은 확정 항목
     "idDepartmentChanged",
     "idInheritanceHeld",            # 이름은 같은데 소속이 달라 id 승계를 보류한 교수
     "idAmbiguous",
@@ -482,7 +483,7 @@ def build_records(sources, review):
 
 # ── 수동 검수 대장 ──────────────────────────────────────────────────
 
-def apply_overrides(records, overrides, review):
+def apply_overrides(records, overrides, review, out_of_scope):
     """사람이 확정한 값을 마지막에 덮어쓴다. 적용·미적용을 모두 review에 남긴다."""
     for item in overrides.get("overrides") or []:
         field = item.get("field")
@@ -495,6 +496,10 @@ def apply_overrides(records, overrides, review):
         targets = [r for r in records if r["name"] == name
                    and (target_department is None or r["department"] == target_department)]
         if len(targets) != 1:
+            if name in out_of_scope and not any(r["name"] == name for r in records):
+                # 대상 교수가 이번 범위에서 빠진 경우 — check_overrides_applied()가
+                # review.manualOverridesOutOfScope에 남긴다 (미적용 목록에 중복으로 넣지 않는다)
+                continue
             review["manualOverridesUnmatched"].append({
                 "override": item, "matched": len(targets),
                 "note": "대상이 정확히 1명이 아니어서 적용하지 않았다 (department로 대상을 지정할 것)",
@@ -658,11 +663,13 @@ def assign_ids(records, review, overrides):
 
 # ── 정합 검사 ───────────────────────────────────────────────────────
 
-def check_overrides_applied(records, overrides, problems):
+def check_overrides_applied(records, overrides, problems, review, out_of_scope):
     """수동 검수 대장이 '의도한 그 사람'에게 적용됐는지 검증한다.
 
     동명이인이 있는데 department 지정이 없으면 엉뚱한 사람에게 적용될 수 있으므로,
     대상 지정과 실제 반영값을 모두 확인한다.
+    대상 교수가 이번 대상 범위에서 빠진 경우(치과 제외·병원 전용 제외 등)는 위반이 아니라
+    review.manualOverridesOutOfScope로 남긴다 — 사람이 확인한 사실 자체는 그대로 유효하다.
     """
     checked = 0
     for item in overrides.get("overrides") or []:
@@ -671,7 +678,14 @@ def check_overrides_applied(records, overrides, problems):
         targets = [r for r in same_name if target is None or r["department"] == target]
 
         if not same_name:
-            problems.append(f"수동검수 {name}/{field}: 그 이름의 교수가 명단에 없다")
+            if name in out_of_scope:
+                review["manualOverridesOutOfScope"].append({
+                    "name": name, "field": field, "value": item.get("value"),
+                    "note": "대상 교수가 이번 대상 범위에서 제외돼 적용되지 않았다 "
+                            "(대장 항목은 그대로 둔다 — 범위가 바뀌면 다시 적용된다)",
+                })
+            else:
+                problems.append(f"수동검수 {name}/{field}: 그 이름의 교수가 명단에 없다")
             continue
         if len(same_name) > 1 and target is None:
             problems.append(f"수동검수 {name}/{field}: 동명이인 {len(same_name)}명인데 "
@@ -693,11 +707,11 @@ def check_overrides_applied(records, overrides, problems):
     return checked
 
 
-def check_integrity(contract_records, records, sources, review, overrides):
+def check_integrity(contract_records, records, sources, review, overrides, out_of_scope):
     """자체 정합 검사. 위반은 모아서 한 번에 보고한다."""
     problems = []
     allowed = set(load_json(SAMPLE_PATH)["professors"][0].keys())  # 샘플이 곧 계약 모양
-    overrides_checked = check_overrides_applied(records, overrides, problems)
+    overrides_checked = check_overrides_applied(records, overrides, problems, review, out_of_scope)
 
     # 동명이인에게 남의 확정값이 통과되지 않도록 대상 지정(department)까지 키에 넣는다
     override_values = {}
@@ -879,7 +893,10 @@ def main():
     records, excluded_dental, hospital_target_count, new_person_count = build_records(sources, review)
     print(f"[5] 레코드 병합 완료 — {len(records)}명")
 
-    apply_overrides(records, overrides, review)
+    # 이번 대상 범위에서 빠진 교수 — 수동 검수 항목이 여기 걸리면 위반이 아니라 review로 남긴다
+    out_of_scope = (set(excluded_dental)
+                    | {i["name"] for i in review["excludedHospitalOnly"]})
+    apply_overrides(records, overrides, review, out_of_scope)
     print(f"    수동 검수 대장: 적용 {len(review['manualOverridesApplied'])}건 / "
           f"미적용 {len(review['manualOverridesUnmatched'])}건")
 
@@ -898,7 +915,8 @@ def main():
 
     contract_records = [{k: v for k, v in r.items() if not k.startswith("_")} for r in records]
     contract_records.sort(key=lambda r: (r["name"], r["department"]))
-    problems = check_integrity(contract_records, records, sources, review, overrides)
+    out_of_scope |= {i["name"] for i in review["droppedNoDepartment"]}
+    problems = check_integrity(contract_records, records, sources, review, overrides, out_of_scope)
 
     print("[8] 출력 저장 중...")
     save_json(OUTPUT_PATH, {

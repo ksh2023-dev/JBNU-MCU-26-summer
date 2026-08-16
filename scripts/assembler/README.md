@@ -74,11 +74,15 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
   그 상태로 id를 물려주면 **예전 찜이 다른 사람을 가리킨다.** 그래서 수동 검수 대장에 그 교수의
   `department` 확정 항목(또는 `field: "idInheritance"` 승계 허용 항목)이 있을 때만 승계하고,
   없으면 새 id를 주고 `review.idInheritanceHeld`에 "승계 보류(사람 확인 필요)"로 남긴다.
-- **병원 명단에만 있는 교수 67명은 교수 구분을 추정한다** — 의대 홈페이지에 없어 근거가 없는데
-  계약상 `professorType`은 값이 필수라서다. 추정 사실은 `professors_extra.json`의
-  `professorTypeInferred: true`와 `review.professorTypeInferred`(전원 목록)에 남기고,
-  계약 파일에는 계약 밖 칸을 만들지 않는다. **포함 여부 자체는 팀 결정 대기**이며
-  `INCLUDE_HOSPITAL_ONLY`로 끄면 제외 명단이 `review.excludedHospitalOnly`에 남는다.
+- **대상은 의대 공식 명단 기준이다 (2026-08-16 회의 결정).** 치과 계열 29명에 더해, 의대 명단에 없고
+  병원 명단에만 있는 교수 67명도 제외한다(`INCLUDE_HOSPITAL_ONLY = False`). 이들은 의대 홈페이지에
+  없어 교수 구분의 근거가 없는데 계약상 `professorType`은 값이 필수라, 수록하려면 추정값을 넣어야 했다.
+  제외 명단은 삭제하지 않고 `review.excludedHospitalOnly`에 남긴다.
+  - `True`로 되돌리면 그 67명이 다시 들어오고, 추정 사실이 `professors_extra.json`의
+    `professorTypeInferred: true`와 `review.professorTypeInferred`(전원 목록)에 기록된다.
+    이때도 계약 파일에는 계약 밖 칸을 만들지 않는다.
+  - 범위에서 빠진 교수를 가리키는 수동 검수 항목은 위반이 아니라
+    `review.manualOverridesOutOfScope`로 남는다. 대장 항목은 지우지 않는다.
 - **수동 검수 대장이 자동 수집을 이긴다.** 병합이 모두 끝난 뒤 마지막에 적용한다.
 - **동명이인은 이름으로 수집된 자료를 물려받지 않는다.** 사진·전문분야·키워드·논문은 전부
   '병원 명단의 이름'을 키로 모은 것이라, 병원 명단에 없는 동명이인에게는 붙이지 않는다.
@@ -96,7 +100,7 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
 | 상수 | 기본값 | 뜻 |
 | --- | --- | --- |
 | `EXCLUDE_DENTAL` | `True` | 치과 계열 제외 (제외 명단은 extra에 남긴다) |
-| `INCLUDE_HOSPITAL_ONLY` | `True` | 의대 명단에 없는 병원 전용 교수 67명 포함 — **팀 결정 대기**. 이들만 교수 구분을 추정하므로, 추정이 부적절하다는 결론이 나면 `False`로 바꾼다 (기본값이 `True`인 이유: 빼면 병원 교수 67명이 검색에서 통째로 사라져 MVP 시연이 불가능하다) |
+| `INCLUDE_HOSPITAL_ONLY` | `False` | 의대 명단에 없는 병원 전용 교수 67명 포함 여부 — **2026-08-16 회의 결정: 의대 공식 명단 기준**이라 제외한다. 이들만 교수 구분을 추정해야 했다. 제외 명단은 `review.excludedHospitalOnly`에 남는다 |
 | `MERGE_CROSS_APPOINTMENTS` | `True` | 두 교실에 걸친 사람을 한 명으로 합침 |
 | `DEPARTMENT_INCLUDE_DIVISION` | `True` | 소속에 분과 표기 |
 | `DEPARTMENT_JOIN_CROSS_APPOINTMENTS` | `True` | 교차 겸직은 두 교실을 `CROSS_APPOINTMENT_SEPARATOR`(` · `)로 이어 표기 |
