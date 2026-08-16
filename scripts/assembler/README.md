@@ -1,7 +1,7 @@
 # scripts/assembler — 최종 조립기 (D단계)
 
 수집 산출물 6종을 병합해 백엔드가 읽는 **`data/output/professors.json`** 을 만든다.
-출력 모양의 기준은 `data/sample/professors.sample.json`(= 데이터 계약 v6.3)이다.
+출력 모양의 기준은 **데이터 계약 v6.4**다 (`docs/data-contract-v6.4.md`).
 
 ```bash
 python scripts/assembler/build_professors.py
@@ -19,8 +19,52 @@ python scripts/assembler/build_professors.py
 | 관리 파일 (커밋) | `data/input/manual_overrides.json` (수동 검수 대장) · `data/input/id_registry.json` (id 대장) |
 | 출력 (커밋 안 함) | `data/output/professors.json` · `data/output/professors_extra.json` · `data/output/_cache_hospital_departments.json` |
 
-`professors.json`에는 **샘플과 같은 칸만** 담는다. 영문명·초록 등 계약 밖 데이터는
+`professors.json`에는 **계약에 있는 칸만** 담는다. 영문명·초록 등 계약 밖 데이터는
 전부 `professors_extra.json`으로 나가므로 백엔드 검증과 충돌하지 않는다.
+
+## 산출물 스키마 (v6.4)
+
+```jsonc
+{
+  "collectedAt": "2026-08-16",          // 원본 데이터의 수집 기준일 (원칙 4)
+  "professors": [
+    {
+      "id": "P-042",                    // 한 번 부여되면 불변 (프론트 찜이 id로 저장된다)
+      "name": "김연동",
+      "profileImageUrl": null,
+      "professorType": "임상의학",        // 기초의학 | 임상의학 | 의학교육학 | 인문사회의학
+      "department": "마취통증의학교실",    // 분과·겸직이 병기될 수 있다
+      "specialties": [],                // 없으면 []
+      "keywords": [],                   // 영문 MeSH — v6.4에서 화면 미표시(검색 매칭 전용)
+      "email": null,
+      "homepageUrl": null,
+      "latestPaper": {                  // 백엔드 내부 필드(API ③ 정렬용) — 계약 응답에는 안 나간다
+        "pmid": "37507223", "publishedAt": "2024-05-07"
+      },
+      "papers": [                       // 최신 1편 + 인용 상위 2편 = 최대 3편, 없으면 []
+        { "title": "...", "journal": "...", "year": 2024,
+          "pmid": "37507223", "kciId": null }
+      ]
+    }
+  ]
+}
+```
+
+**v6.3 → v6.4에서 바뀐 것**
+
+| 변경 | 조립기 처리 |
+| --- | --- |
+| `labName` 필드 삭제 | 출력하지 않는다 (`EMIT_LABNAME = False`). 수집 가능한 출처가 없어 전원 `null`이었고 화면에서도 제거됐다 |
+| `papers[].kciId` 추가 | 전 논문에 칸을 넣는다. **KCI 수집 전이라 값은 전부 `null`** — 프론트가 링크 분기(pmid → PubMed / kciId → KCI)를 미리 구현할 수 있게 하기 위한 것이다 |
+| 원칙 1 확장 (`pmid` **또는** `kciId` 필수) | 둘 다 없는 논문은 넣지 않고, 정합 검사에서 0건인지 확인한다 |
+| 대상 범위 확정 (0-2장) | 의대 공식 명단 기준 — 아래 "알아 둘 규칙" 참고 |
+
+> ⚠️ **백엔드는 아직 v6.3 스키마다** (`backend/app/schemas.py`). 이 산출물로 기동은 되지만
+> 응답이 계약과 어긋난다 — 상세 응답에 `labName: null`이 그대로 붙고(`ProfessorDetail.lab_name`이 남아 있음),
+> `papers[].kciId`는 `Paper` 모델에 없어 응답에서 빠진다. 백엔드 담당자의 스키마 수정이 필요하다.
+> 임시로 `labName`이 꼭 필요하면 `EMIT_LABNAME = True`로 되살릴 수 있다.
+> `data/sample/professors.sample.json`도 아직 v6.3(labName 있음·kciId 없음)이라,
+> 조립기는 샘플에서 칸 목록을 읽은 뒤 위 개정분을 코드에서 반영한다.
 
 ## 산출물 취급
 
@@ -43,14 +87,15 @@ python scripts/assembler/build_professors.py
 
 | 순서 | 실행 | 만들어지는 재료 |
 | --- | --- | --- |
-| 1 | `python scripts/pubmed_collector/build_all.py` | `professors_papers.json` (입력: `data/input/professor_paper_lists.json` — 커밋되어 있음) |
-| 2 | `python scripts/profile_image_collector/fetch_image_urls.py` | `profile_images.json` (입력: `data/input/professor_pages.json` — 커밋되어 있음) |
-| 3 | `python scripts/assembler/build_professors.py` | `professors.json` · `professors_extra.json` |
+| 1 | `python scripts/roster_crawler/crawl_roster.py` | `roster_crawled.json` (main에 있음 — 이 브랜치에서는 `git merge origin/main` 후 사용) |
+| 2 | `python scripts/pubmed_collector/build_all.py` | `professors_papers.json` (입력: `data/input/professor_paper_lists.json` — 커밋되어 있음) |
+| 3 | `python scripts/profile_image_collector/fetch_image_urls.py` | `profile_images.json` (입력: `data/input/professor_pages.json` — 커밋되어 있음) |
+| 4 | `python scripts/assembler/build_professors.py` | `professors.json` · `professors_extra.json` |
 
-> ⚠️ **현재 저장소만으로는 재료 3종을 다시 만들 수 없다.** `roster_crawled.json`(명단 크롤러),
-> `specialties.json`(전문진료분야 수집), `professors_enriched_meta.json`(C단계 보강)을 만든 스크립트는
-> 아직 커밋되어 있지 않다. 이 세 파일은 (a)처럼 담당자에게 받아 `data/output/`에 놓아야 3번이 돌아간다.
-> (해당 스크립트를 저장소에 올리면 (b)만으로 전체 재생성이 가능해진다.)
+> ⚠️ **재료 2종은 아직 저장소만으로 만들 수 없다.** `specialties.json`(전문진료분야 수집)과
+> `professors_enriched_meta.json`(C단계 MeSH·영문명 보강)을 만든 스크립트가 커밋되어 있지 않다.
+> 이 두 파일은 (a)처럼 담당자에게 받아 `data/output/`에 놓아야 마지막 단계가 돌아간다.
+> (두 스크립트를 저장소에 올리면 (b)만으로 전체 재생성이 가능해진다.)
 
 **백엔드 연결은 `DATA_FILE` 환경변수 하나로 한다.** 백엔드 코드는 고치지 않는다 —
 `backend/app/config.py`가 `DATA_FILE`을 읽고, 값이 없으면 샘플 데이터를 쓴다.
@@ -108,3 +153,4 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
 | `USE_DEPARTMENT_CACHE` | `True` | 조회 결과 캐시 사용 |
 | `HOSPITAL_ONLY_PROFESSOR_TYPE` | `"임상의학"` | 의대 명단에 없는 병원 교수의 교수 구분(추정) |
 | `PAPERS_LIMIT` | `3` | 대표 논문 수 |
+| `EMIT_LABNAME` | `False` | `labName` 칸 출력 여부. v6.4에서 계약 필드 자체가 삭제돼 기본값 `False`. 백엔드가 v6.4 반영 전이라 임시로 필요하면 `True` (값은 항상 `null`) |

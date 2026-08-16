@@ -1,4 +1,12 @@
-"""D단계 — 최종 조립기. 수집 산출물을 병합해 데이터 계약 v6.3 모양의 professors.json을 만든다.
+"""D단계 — 최종 조립기. 수집 산출물을 병합해 데이터 계약 v6.4 모양의 professors.json을 만든다.
+
+v6.4 개정분 (2026-08-16 회의)
+  - 대상 범위: 의대 공식 명단 기준 (치과 계열·병원 전용 교수 제외) → 0-2장
+  - `labName` 필드 삭제 (수집 출처 없음) → EMIT_LABNAME
+  - `papers[]`에 `kciId` 추가. 논문은 pmid 또는 kciId 중 하나가 반드시 있어야 한다 (원칙 1)
+  ※ 계약 문서(docs/data-contract-v6.4.md)는 별도 브랜치에 있고 이 브랜치에는 아직 없다.
+    데이터 계약 샘플(data/sample/professors.sample.json)도 아직 v6.3이라,
+    아래 두 개정분은 코드에서 명시적으로 반영한다.
 
 입력 (재료 6종)
   data/output/roster_crawled.json            의대 명단 (교수구분·교실·직위·전화·동명이인 메모·diff)
@@ -47,6 +55,13 @@ INCLUDE_HOSPITAL_ONLY = False
 HOSPITAL_ONLY_PROFESSOR_TYPE = "임상의학"  # 위를 True로 되돌릴 때만 쓰인다 (추정 → extra 플래그 + review)
 PAPERS_LIMIT = 3                    # 대표 논문 수 (계약 1-2: 최신 1편 + 인용 상위 2편)
 
+# labName을 출력할지 — v6.4에서 계약 필드 자체가 삭제되어 기본값 False.
+# (수집 가능한 출처가 없어 전원 null이었고 화면에서도 제거됐다)
+# 백엔드 스키마가 아직 v6.4 반영 전이라면 임시로 True가 필요할 수 있다.
+# 참고: backend/app/schemas.py의 lab_name은 기본값 None을 가진 선택 필드라,
+# False로 두어 칸을 빼도 백엔드 적재는 실패하지 않는다 (대신 응답에 labName: null이 그대로 붙는다).
+EMIT_LABNAME = False
+
 SLEEP_SECONDS = 0.5                 # 서버 예절: 병원 페이지 호출 사이 대기
 TIMEOUT_SECONDS = 15
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
@@ -78,6 +93,9 @@ EXTRA_PATH = ROOT / "data" / "output" / "professors_extra.json"
 CACHE_PATH = ROOT / "data" / "output" / "_cache_hospital_departments.json"
 
 PROFESSOR_TYPES = ("기초의학", "임상의학", "의학교육학", "인문사회의학")
+
+# 계약 1-2의 논문 객체 칸 (v6.4 — kciId 추가)
+PAPER_FIELDS = ("title", "journal", "year", "pmid", "kciId")
 
 # 계약 밖이지만 수동 검수 대장으로 고칠 수 있는 필드 (professors_extra.json 전용)
 EXTRA_ONLY_FIELDS = ("nameEn",)
@@ -318,14 +336,18 @@ def new_record(name, department, department_source, professor_type, professor_ty
                in_hospital_list, person):
     """계약 필드 + 계약 밖(_extra) 필드를 가진 작업용 레코드."""
     primary = person["primary"] if person else None
-    return {
-        # ── 계약 필드 (샘플과 같은 칸·같은 순서) ──
+    # ── 계약 필드 (계약 1-2 순서) ──
+    record = {
         "id": None,
         "name": name,
         "profileImageUrl": None,
         "professorType": professor_type,
         "department": department,
-        "labName": None,           # 출처 없음 → null (계약 4장)
+    }
+    if EMIT_LABNAME:
+        # v6.4에서 삭제된 칸 — 백엔드가 아직 v6.3이라 필요할 때만 되살린다 (값은 항상 null)
+        record["labName"] = None
+    record.update({
         "specialties": [],
         "keywords": [],
         "email": None,
@@ -360,7 +382,8 @@ def new_record(name, department, department_source, professor_type, professor_ty
                 "professorTypeInferred": professor_type_inferred,
             },
         },
-    }
+    })
+    return record
 
 
 def fill_from_sources(record, sources, review):
@@ -386,9 +409,15 @@ def fill_from_sources(record, sources, review):
     record["_extra"]["evidence"] = meta_entry.get("evidence")
 
     paper_entry = sources["papers"].get(name) or {}
-    kept = [p for p in (paper_entry.get("papers") or []) if (p.get("pmid") or "").strip()]  # 원칙 1
+    # 원칙 1 (v6.4) — pmid 또는 kciId 중 하나는 있어야 한다. 둘 다 없으면 넣지 않는다
+    kept = [p for p in (paper_entry.get("papers") or [])
+            if (p.get("pmid") or "").strip() or (p.get("kciId") or "").strip()]
     record["papers"] = [{"title": p["title"], "journal": p.get("journal"),
-                         "year": p.get("year"), "pmid": p["pmid"]} for p in kept[:PAPERS_LIMIT]]
+                         "year": p.get("year"),
+                         "pmid": (p.get("pmid") or "").strip() or None,
+                         # v6.4 신설. KCI 수집 전이라 현재는 전부 null이다
+                         "kciId": (p.get("kciId") or "").strip() or None}
+                        for p in kept[:PAPERS_LIMIT]]
     record["_extra"]["allPapers"] = list(paper_entry.get("allPapers") or [])
 
     latest = paper_entry.get("latestPaper")
@@ -710,7 +739,11 @@ def check_overrides_applied(records, overrides, problems, review, out_of_scope):
 def check_integrity(contract_records, records, sources, review, overrides, out_of_scope):
     """자체 정합 검사. 위반은 모아서 한 번에 보고한다."""
     problems = []
-    allowed = set(load_json(SAMPLE_PATH)["professors"][0].keys())  # 샘플이 곧 계약 모양
+    # 계약 모양의 기준은 샘플 파일이지만 샘플은 아직 v6.3이다.
+    # v6.4 개정분(labName 삭제)을 여기서 명시적으로 반영한다.
+    allowed = set(load_json(SAMPLE_PATH)["professors"][0].keys())
+    if not EMIT_LABNAME:
+        allowed.discard("labName")
     overrides_checked = check_overrides_applied(records, overrides, problems, review, out_of_scope)
 
     # 동명이인에게 남의 확정값이 통과되지 않도록 대상 지정(department)까지 키에 넣는다
@@ -730,12 +763,14 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
     if duplicated:
         problems.append(f"id 중복 {len(duplicated)}건: {duplicated}")
 
-    no_pmid = contract_violation = 0
+    no_identifier = contract_violation = 0
     for record in contract_records:
         name = record["name"]
         if set(record.keys()) != allowed:
             contract_violation += 1
             problems.append(f"{name}: 계약 밖 칸 또는 누락 — {sorted(set(record) ^ allowed)}")
+        if "labName" in record and not EMIT_LABNAME:
+            problems.append(f"{name}: labName은 v6.4에서 삭제된 칸이다")
         if not record["id"] or not record["name"]:
             problems.append(f"{name}: id/name이 비어 있다")
         if record["professorType"] not in PROFESSOR_TYPES:
@@ -745,14 +780,17 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
 
         # 원칙 2 — 값이 없으면 null. 빈 문자열을 쓰지 않는다
         for field in ("profileImageUrl", "email", "homepageUrl", "labName"):
-            if record[field] is not None and not str(record[field]).strip():
+            if field in record and record[field] is not None and not str(record[field]).strip():
                 problems.append(f"{name}: {field}가 빈 문자열이다 (null이어야 한다)")
 
-        # 원칙 1 — pmid 없는 논문 0건
+        # 원칙 1 (v6.4) — pmid와 kciId가 둘 다 없는 논문 0건
         for paper in record["papers"]:
-            if not (paper.get("pmid") or "").strip():
-                no_pmid += 1
-                problems.append(f"{name}: pmid 없는 논문 — {paper.get('title')!r}")
+            if set(paper.keys()) != set(PAPER_FIELDS):
+                problems.append(f"{name}: 논문 칸이 계약과 다르다 — "
+                                f"{sorted(set(paper) ^ set(PAPER_FIELDS))}")
+            if not (paper.get("pmid") or "").strip() and not (paper.get("kciId") or "").strip():
+                no_identifier += 1
+                problems.append(f"{name}: pmid·kciId가 둘 다 없는 논문 — {paper.get('title')!r}")
         if len(record["papers"]) > PAPERS_LIMIT:
             problems.append(f"{name}: 대표 논문 {len(record['papers'])}편 (최대 {PAPERS_LIMIT})")
 
@@ -800,8 +838,9 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
 
     print("[7] 정합 검사")
     print(f"    id 중복                 : {len(duplicated)}건")
-    print(f"    pmid 없는 논문           : {no_pmid}건")
-    print(f"    계약 밖 칸 사용          : {contract_violation}건")
+    print(f"    식별자(pmid·kciId) 없는 논문: {no_identifier}건")
+    print(f"    계약 밖 칸 사용          : {contract_violation}건 "
+          f"(labName 출력={EMIT_LABNAME}, papers 칸={list(PAPER_FIELDS)})")
     print(f"    수동검수 대상·반영 확인   : {overrides_checked}건 "
           f"(확인 사실 항목 {len([o for o in (overrides.get('overrides') or []) if o.get('field') in ASSERTION_FIELDS])}건 별도 검증)")
     print(f"    지어낸 값·null 규칙 위반  : "
@@ -832,9 +871,15 @@ def report(contract_records, review, excluded_dental, hospital_total,
     print("    필드별 채움율")
     for field in ("profileImageUrl", "professorType", "department", "specialties",
                   "keywords", "email", "homepageUrl", "papers", "latestPaper", "labName"):
+        if not contract_records or field not in contract_records[0]:
+            continue  # labName은 v6.4에서 삭제 (EMIT_LABNAME=False면 칸 자체가 없다)
         filled = sum(1 for r in contract_records if r[field] not in (None, [], ""))
-        note = "  ← 출처 없음(계약 4장: null)" if field == "labName" else ""
+        note = "  ← 출처 없음(v6.3 호환용)" if field == "labName" else ""
         print(f"      {field:<17} {filled:>3}/{total}  ({filled * 100 // total:>3}%){note}")
+    papers = [p for r in contract_records for p in r["papers"]]
+    print(f"      {'papers 식별자':<16} 논문 {len(papers)}편 — "
+          f"pmid {sum(1 for p in papers if p.get('pmid'))}편 / "
+          f"kciId {sum(1 for p in papers if p.get('kciId'))}편 (KCI 수집 전)")
     print()
     print("    review 요약 (professors_extra.json의 review 참고)")
     for key, items in review.items():
