@@ -3,34 +3,33 @@
  *
  * 규칙 (ProfessorCard.css 와 동일)
  *   - 이 파일의 선택자는 전부 .filter-panel 안쪽만 건드립니다. (다른 화면에 영향 없음)
- *   - 색/여백 값은 .filter-panel 안에서만 쓰는 변수로 선언합니다.
- *     전역 index.css 는 아직 Vite 기본 템플릿이라(가운데 정렬 등) 그대로 물려받으면
- *     시안과 달라지기 때문에, 패널이 필요한 값을 직접 선언합니다.
+ *   - 색/형태 값은 .filter-panel 안에서만 쓰는 지역 변수로 선언하되,
+ *     그 값은 global.css 의 공통 토큰을 가리킵니다.
  *   - 교수 카드와 같은 radius / 테두리 / 그림자를 써서 결과 목록과 한 세트로 보이게 합니다.
  */
 
 .filter-panel {
   /* --- 색 --- */
-  --fp-primary: #2563eb;
-  --fp-primary-dark: #1d4ed8;
-  --fp-primary-soft: #eff6ff;
-  --fp-border: #e5e7eb;
-  --fp-surface: #ffffff;
-  --fp-text: #374151;
-  --fp-text-strong: #111827;
-  --fp-text-muted: #6b7280;
-  --fp-focus: #2563eb;
+  --fp-primary: var(--brand);
+  --fp-primary-dark: var(--brand-strong);
+  --fp-primary-soft: var(--brand-soft);
+  --fp-border: var(--line);
+  --fp-surface: var(--surface);
+  --fp-text: var(--ink);
+  --fp-text-strong: var(--ink-strong);
+  --fp-text-muted: var(--ink-muted);
+  --fp-focus: var(--focus);
   /* 체크박스 자체를 칠하는 색. 체크 표시(흰색)가 보여야 해서
-     본문 파랑(--fp-primary)과 따로 둡니다. */
-  --fp-accent: #2563eb;
-  --fp-row-hover: #eff6ff;
+     본문 파랑(--fp-primary)이 아니라, 꽉 채운 면용 파랑(--brand-solid)을 씁니다.
+     다크에서 밝은 파랑(#60a5fa) 위에서는 흰 체크 표시가 묻혀 보이기 때문입니다. */
+  --fp-accent: var(--brand-solid);
+  --fp-row-hover: var(--brand-soft);
 
   /* --- 형태 --- */
-  --fp-radius-card: 12px;
-  --fp-radius-control: 6px;
-  --fp-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --fp-transition: 150ms ease;
+  --fp-radius-card: var(--radius-card);
+  --fp-radius-control: var(--radius-chip);
+  --fp-shadow: var(--shadow);
+  --fp-transition: var(--transition);
 
   box-sizing: border-box;
   padding: 22px;
@@ -40,7 +39,7 @@
   box-shadow: var(--fp-shadow);
 
   color: var(--fp-text);
-  font-family: system-ui, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
   text-align: left; /* 전역 #root 의 text-align: center 를 물려받지 않도록 */
@@ -53,27 +52,14 @@
 }
 
 /* 다크모드.
-   전환 방식은 전역 index.css 의 color-scheme: light dark 하나뿐이라
-   (토글 버튼·data-theme·JS 상태 없음) 여기서도 prefers-color-scheme 으로만 맞춥니다.
-
-   패널은 교수 카드와 같은 밝기(#1e2028)에 두어 결과 목록과 한 세트로 보이게 합니다.
-   체크박스만 --fp-accent 를 한 단계 진한 파랑으로 두는데,
-   밝은 파랑(#60a5fa) 위에서는 흰 체크 표시가 묻혀 보이기 때문입니다. */
+   대부분의 값은 global.css 의 토큰이 바꿔 주므로, 여기에는
+   "이 패널에서만 한 단계 더 조정하는" 예외 하나만 남깁니다.
+   전환 방식은 여전히 prefers-color-scheme 하나뿐입니다. */
 @media (prefers-color-scheme: dark) {
   .filter-panel {
-    --fp-primary: #60a5fa;
-    --fp-primary-dark: #93c5fd;
-    --fp-primary-soft: rgba(96, 165, 250, 0.12);
-    --fp-border: #30333d;
-    --fp-surface: #1e2028;
-    --fp-text: #d1d5db;
-    --fp-text-strong: #f3f4f6;
-    --fp-text-muted: #9ca3af;
-    --fp-focus: #93c5fd;
-    --fp-accent: #3b82f6;
-    /* 어두운 면 위에서는 옅은 배경이 잘 안 보여 라이트보다 살짝 진하게 잡습니다 */
+    /* 어두운 면 위에서는 옅은 배경(--brand-soft 0.12)이 잘 안 보여
+       행 hover 만 살짝 진하게 잡습니다 */
     --fp-row-hover: rgba(96, 165, 250, 0.15);
-    --fp-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 }
 

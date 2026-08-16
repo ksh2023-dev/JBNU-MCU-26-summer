@@ -35,7 +35,7 @@ import {
 import SearchBar from '../components/SearchBar.jsx'
 import FilterPanel from '../components/FilterPanel.jsx'
 import ProfessorCard from '../components/ProfessorCard.jsx'
-import Pagination from '../components/Pagenation.jsx'
+import Pagination from '../components/Pagination.jsx'
 import '../styles/SearchResultPage.css'
 
 /**

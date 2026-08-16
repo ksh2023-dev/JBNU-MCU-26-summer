@@ -95,7 +95,8 @@ function ProfessorDetailPage() {
           className="detail-button"
           onClick={() => navigate(-1)}
         >
-          ← 목록으로 돌아가기
+          <ArrowLeftIcon />
+          목록으로 돌아가기
         </button>
       </div>
     )
@@ -111,7 +112,8 @@ function ProfessorDetailPage() {
           className="detail-button"
           onClick={() => navigate(-1)}
         >
-          ← 목록으로 돌아가기
+          <ArrowLeftIcon />
+          목록으로 돌아가기
         </button>
       </div>
     )
@@ -133,7 +135,8 @@ function ProfessorDetailPage() {
           // navigate(-1) = 브라우저 뒤로가기
           onClick={() => navigate(-1)}
         >
-          ← 목록으로 돌아가기
+          <ArrowLeftIcon />
+          목록으로 돌아가기
         </button>
       </div>
 
@@ -170,7 +173,8 @@ function ProfessorDetailPage() {
               }
               onClick={handleToggleFavorite}
             >
-              {isFavorite ? '♥ 찜 취소' : '♡ 찜하기'}
+              <HeartIcon filled={isFavorite} />
+              {isFavorite ? '찜 취소' : '찜하기'}
             </button>
           </div>
 
@@ -205,7 +209,8 @@ function ProfessorDetailPage() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    홈페이지 바로가기 ↗
+                    홈페이지 바로가기
+                    <ExternalLinkIcon />
                   </a>
                 </dd>
               </>
@@ -273,7 +278,8 @@ function ProfessorDetailPage() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  PubMed 보기 ↗
+                  PubMed 보기
+                  <ExternalLinkIcon />
                 </a>
               </li>
             ))}
@@ -281,6 +287,65 @@ function ProfessorDetailPage() {
         )}
       </section>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------
+ * 아이콘 — 외부 아이콘 라이브러리 없이 인라인 SVG 로 그립니다.
+ *
+ * 예전에는 '←' '↗' '♡' '♥' 문자를 그대로 썼는데, 글꼴에 따라 크기·굵기·세로 위치가
+ * 제각각이라 다른 화면의 아이콘(HomePage / ProfessorCard 는 전부 인라인 SVG)과
+ * 톤이 맞지 않았습니다. 같은 규격(16px, stroke-width 1.8)으로 맞춥니다.
+ *
+ * 옆에 안내 문구가 글자로 함께 있으므로 전부 장식용(aria-hidden)입니다.
+ * ------------------------------------------------------------------ */
+
+/** 공통 SVG 틀 — 크기·선 두께를 한 곳에서 맞춘다 */
+function Icon({ children, fill = 'none' }) {
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill={fill}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+/** [목록으로 돌아가기] 앞 화살표 — 교수 카드의 오른쪽 화살표를 뒤집은 모양 */
+function ArrowLeftIcon() {
+  return (
+    <Icon>
+      <path d="M20 12H6M11.5 6l-6 6 6 6" />
+    </Icon>
+  )
+}
+
+/** 새 탭으로 여는 링크 표시 */
+function ExternalLinkIcon() {
+  return (
+    <Icon>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M18 14.5v4A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6h4" />
+    </Icon>
+  )
+}
+
+/** 찜 하트 — 교수 카드와 같은 path 를 쓰고, 찜한 상태에서만 안을 채운다 */
+function HeartIcon({ filled }) {
+  return (
+    <Icon fill={filled ? 'currentColor' : 'none'}>
+      <path d="M12 20.3 4.7 13a4.6 4.6 0 0 1 6.5-6.5l.8.8.8-.8A4.6 4.6 0 0 1 19.3 13Z" />
+    </Icon>
   )
 }
 

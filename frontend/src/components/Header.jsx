@@ -4,7 +4,6 @@ import { NavLink } from 'react-router-dom'
 const MENUS = [
   { to: '/', label: '교수 검색' },
   { to: '/favorites', label: '내 저장' },
-  { to: '/login', label: '로그인' },
 ]
 
 function Header() {
@@ -13,7 +12,7 @@ function Header() {
       <div className="app-header__inner">
         {/* 로고를 누르면 메인으로 */}
         <NavLink to="/" className="app-header__logo">
-          연수매칭
+          연구매칭
         </NavLink>
 
         <nav className="app-header__nav">

@@ -64,7 +64,8 @@ function FilterPanel({
       <div className="filter-panel__header">
         <h2 className="filter-panel__title">필터</h2>
         <button type="button" className="filter-panel__reset" onClick={onReset}>
-          <span aria-hidden="true">↺</span> 초기화
+          <ResetIcon />
+          초기화
         </button>
       </div>
 
@@ -97,6 +98,35 @@ function FilterPanel({
 
       <p className="filter-panel__hint">필터는 선택 시 즉시 반영됩니다.</p>
     </aside>
+  )
+}
+
+/**
+ * [초기화] 앞 되돌리기 아이콘.
+ *
+ * 예전에는 '↺' 문자를 그대로 썼는데, 글꼴에 따라 크기·굵기·세로 위치가 제각각이라
+ * 다른 화면의 아이콘(전부 인라인 SVG)과 톤이 맞지 않았습니다.
+ * ProfessorCard / HomePage 와 같은 규격(16px, stroke-width 1.8)으로 맞춥니다.
+ *
+ * 옆에 '초기화' 라는 글자가 함께 있으므로 장식용(aria-hidden)입니다.
+ */
+function ResetIcon() {
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4.5 10.5A8 8 0 1 1 4 14" />
+      <path d="M4 5v5.5h5.5" />
+    </svg>
   )
 }
 
