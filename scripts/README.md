@@ -11,7 +11,7 @@
 
 모든 스크립트 공통 원칙:
 
-- 데이터 계약(`docs/data-contract-v6.3.md`) 0장 **할루시네이션 방지 4원칙**을 따릅니다 — 없는 값은 `null`, PMID 없는 논문 저장 금지, 확신 없는 값은 `review`에 기록.
+- 데이터 계약(`docs/data-contract-v6.4.md`) 0장 **할루시네이션 방지 4원칙**을 따릅니다 — 없는 값은 `null`, 논문은 **`pmid` 또는 `kciId` 중 하나가 필수**(둘 다 없는 논문은 저장 금지, v6.4), 확신 없는 값은 `review`에 기록.
 - 운영 중인 서버 예절: 요청 사이 0.4~0.5초 대기, 실패 시 1회 재시도 후 `null`/`review` 처리하고 전체 실행은 계속.
 - 파일 상단의 `LIMIT` 상수로 앞 N명만 테스트 실행 가능 (`None`이면 전체). **전체 실행 전 LIMIT으로 먼저 검증하세요.**
 - `data/output/`은 `.gitignore` 대상이라 커밋되지 않습니다. `data/input` 승격은 검수 후 사람이 결정합니다.
@@ -171,7 +171,7 @@ python scripts/profile_image_collector/fetch_image_urls.py
 ## 참고 사항
 
 - 프로필 사진은 **비영리·내부 테스트 용도** 사용으로 팀장 승인을 받았습니다 (2026-08 작업지시서).
-- 수집 결과를 서비스 데이터에 반영할 때는 `profileImageUrl` 필드 규칙(`docs/data-contract-v6.3.md` 1-1장)을 따릅니다.
+- 수집 결과를 서비스 데이터에 반영할 때는 `profileImageUrl` 필드 규칙(`docs/data-contract-v6.4.md` 1-1장)을 따릅니다.
 
 ---
 
