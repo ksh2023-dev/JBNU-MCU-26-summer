@@ -121,8 +121,10 @@ function ProfessorDetailPage() {
 
   /* ---------- 4) 정상 화면 ---------- */
 
-  // 논문 중 pmid 가 있는 것만 화면에 넣는다. (계약 원칙 1)
-  const papers = professor.papers.filter((paper) => paper.pmid)
+  // 논문은 pmid 또는 kciId 중 최소 하나를 가진다. (계약 v6.4 1-2)
+  // 둘 다 없는 논문은 응답에 오지 않지만, 만약 들어오면 화면에서 뺀다. (원칙 1)
+  // pmid 만 보고 거르면 kciId 만 있는 국내 논문이 통째로 사라진다.
+  const papers = professor.papers.filter((paper) => paper.pmid || paper.kciId)
 
   return (
     <div className="detail-page">
@@ -181,11 +183,9 @@ function ProfessorDetailPage() {
           {/* 소속 교실 / 진료과 */}
           <p className="detail-department">{professor.department}</p>
 
+          {/* 연구실(labName) 행은 계약 v6.4 에서 필드 자체가 삭제되어 없앴습니다.
+              값이 null 이라 "정보 없음"을 띄우던 것이 아니라, 이제 응답에 오지 않습니다. */}
           <dl className="detail-info">
-            <dt>연구실</dt>
-            {/* labName 이 null 이면 지어내지 않고 "정보 없음" */}
-            <dd>{professor.labName ?? NO_DATA}</dd>
-
             <dt>이메일</dt>
             <dd>
               {professor.email ? (
@@ -220,21 +220,27 @@ function ProfessorDetailPage() {
       </section>
 
       <div className="detail-columns">
-        {/* 연구 분야 - specialties 는 문자열 배열이라 이름만 나열한다 */}
-        <section className="detail-card">
-          <h3 className="detail-section-title">연구 분야</h3>
-          {professor.specialties.length > 0 ? (
+        {/*
+          연구 분야 — 계약 v6.4 4장: specialties 가 빈 배열이면 "해당 영역 표시 생략".
+          "정보 없음"을 띄우지 않고 카드 자체를 그리지 않습니다.
+          (한쪽만 남으면 CSS 의 :only-child 규칙이 가로 전체를 쓰게 합니다)
+        */}
+        {professor.specialties.length > 0 && (
+          <section className="detail-card">
+            <h3 className="detail-section-title">연구 분야</h3>
             <ul className="detail-specialties">
               {professor.specialties.map((specialty) => (
                 <li key={specialty}>{specialty}</li>
               ))}
             </ul>
-          ) : (
-            <p className="detail-empty">{NO_DATA}</p>
-          )}
-        </section>
+          </section>
+        )}
 
-        {/* 연구 키워드 - 상세 페이지에서는 전체를 보여준다 */}
+        {/*
+          연구 키워드 — 계약 v6.4 는 "화면 미표시"로 바뀌었지만,
+          노출 유지 여부를 팀에 다시 논의 요청한 상태라 기존 UI 를 그대로 둡니다.
+          (PR #26 리뷰 4번 — 팀 결정 후 반영)
+        */}
         <section className="detail-card">
           <h3 className="detail-section-title">연구 키워드</h3>
           {professor.keywords.length > 0 ? (
@@ -260,8 +266,9 @@ function ProfessorDetailPage() {
         ) : (
           <ol className="detail-papers">
             {papers.map((paper, index) => (
-              // pmid 는 논문마다 다르므로 목록의 key 로 쓰기 좋다
-              <li key={paper.pmid} className="detail-paper">
+              // 식별자는 논문마다 다르므로 목록의 key 로 쓰기 좋다.
+              // kciId 만 있는 국내 논문도 있으므로 두 값 중 있는 쪽을 쓴다.
+              <li key={paper.pmid ?? paper.kciId} className="detail-paper">
                 <span className="detail-paper__no">{index + 1}</span>
 
                 <div className="detail-paper__body">
@@ -271,16 +278,26 @@ function ProfessorDetailPage() {
                   </p>
                 </div>
 
-                {/* pmid 로 PubMed 주소를 직접 만들어 새 탭으로 연다 */}
-                <a
-                  className="detail-button"
-                  href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  PubMed 보기
-                  <ExternalLinkIcon />
-                </a>
+                {/*
+                  원문 링크 (계약 v6.4 3장)
+                    pmid 있음                → PubMed. 둘 다 있어도 PubMed 를 우선한다
+                    pmid 없고 kciId 만 있음  → KCI 논문 페이지
+
+                  KCI 주소 형식은 아직 백엔드와 최종 확인 전이라, 지금은 주소를
+                  지어내지 않고 버튼을 그리지 않는다. 형식이 확정되면 여기에
+                  kciId 분기를 한 줄 추가하면 된다. (원칙 2 — 없는 값을 만들지 않는다)
+                */}
+                {paper.pmid && (
+                  <a
+                    className="detail-button"
+                    href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    PubMed 보기
+                    <ExternalLinkIcon />
+                  </a>
+                )}
               </li>
             ))}
           </ol>

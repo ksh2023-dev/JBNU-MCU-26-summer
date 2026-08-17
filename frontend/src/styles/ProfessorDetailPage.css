@@ -299,6 +299,13 @@
   gap: 20px;
 }
 
+/* 연구 분야(specialties)가 비어 카드가 하나만 남으면 가로 전체를 쓰게 합니다.
+   그대로 두면 남은 카드가 왼쪽 절반에만 놓이고 오른쪽이 빈 공간으로 남습니다.
+   계약 v6.4 4장이 말하는 "데이터가 거의 비어 있는 교수"에서 실제로 생기는 상황입니다. */
+.detail-columns > :only-child {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 800px) {
   .detail-columns {
     grid-template-columns: 1fr;
