@@ -16,9 +16,15 @@ review.homonymUnassigned에 남겨 사람이 확인해 배정하게 한다 (근�
 이 단계는 **KCI 산출물 생성까지**다. 병합(하나의 논문으로 합치기)은 조립 단계에서 한다 —
 여기서는 "이 KCI 논문은 저 pmid와 같은 논문으로 보인다"는 판별 정보만 남긴다.
 
-안정성: 5xx·네트워크 예외·XML 파싱 실패는 5초 → 15초 간격으로 최대 3회 시도한다.
-그래도 실패하면 그 교수만 review.fetchFailed에 기록하고 다음 교수로 계속한다.
-fetchFailed 교수는 저장되지 않으므로 재실행하면 자동으로 다시 시도된다.
+안정성: 5xx·네트워크 예외·XML 파싱 실패·**해석할 수 없는 응답**은 5초 → 15초 간격으로
+최대 3회 시도한다. 그래도 실패하면 그 교수만 review.fetchFailed에 기록하고 다음 교수로 계속한다.
+fetchFailed 교수는 **레코드를 저장하지 않으므로**(빈 papers를 남기지 않는다) 이전 실행의
+결과가 그대로 남고, 재실행하면 자동으로 다시 시도된다.
+
+fail-closed 원칙: '논문 0건'으로 저장하려면 근거가 있어야 한다 — KCI가 "No Data"라고
+답했거나 <total>0</total>이 왔을 때뿐이다. 근거 없이 비어 있는 응답(점검 페이지·프록시 오류·
+형식 변경)은 0건이 아니라 오류로 다룬다. 이 구분이 없으면 API 장애 한 번에 교수 전원의
+수집 결과가 조용히 빈 값으로 덮인다.
 
 데이터 계약 v6.4:
 - 원칙 1: 논문에는 pmid 또는 kciId가 필수 — kciId가 없는 응답 항목은 버린다.
@@ -34,7 +40,8 @@ fetchFailed 교수는 저장되지 않으므로 재실행하면 자동으로 다
   이걸 틀리면 키 오류가 '논문 0건'으로 삼켜져 전원이 빈 결과로 저장된다.
 - 저자 소속이 **영문으로만 오는 논문이 있다** → AFFILIATION_KEYWORDS에 영문 표기를 넣었다.
 파싱은 태그 위치를 고정하지 않고 이름으로 자손을 찾는 방식(_iter_by_tag)이라 중첩 구조가
-바뀌어도 견디지만, 태그 '이름' 자체가 바뀌면 값이 null로 빈다. 응답 구조는 README 참고.
+바뀌어도 견디지만, 태그 '이름' 자체가 바뀌면 값이 null로 빈다.
+응답 구조는 scripts/README.md 4장 '실제 응답 구조(실측)' 참고.
 """
 
 import difflib
@@ -126,15 +133,19 @@ OUTPUT_PATH = ROOT / "data" / "output" / "kci_papers.json"
 # ---------------------------------------------------------------------------
 
 def read_kci_api_key(env_path=ENV_PATH):
-    """루트 .env에서 KCI_API_KEY를 읽는다. 없으면 발급 절차를 안내하고 중단(exit 1).
+    """KCI_API_KEY를 읽는다 — 환경변수가 먼저, 없으면 루트 .env (외부 라이브러리 없이).
 
     키를 공개 저장소에 커밋하지 않으려고 코드가 아니라 .env에서 읽는다
     (.env는 .gitignore 대상, 양식은 루트 .env.example).
     2단계 enrich_citations.read_openalex_api_key와 같은 방식이다 — 다만 기존 스크립트를
     수정하지 않기 위해(지시서 4장) import 대신 같은 모양의 파서를 여기에 둔다.
+
+    환경변수를 먼저 보는 이유: scripts/run_all.py가 `--env-file`로 지정한 .env를 파싱해
+    하위 단계 프로세스의 환경변수로 넘긴다. 이렇게 해야 지정한 파일이 실제로 적용된다.
+    이 스크립트를 단독으로 실행할 때는 환경변수가 없으므로 지금까지처럼 루트 .env를 읽는다.
     """
-    api_key = ""
-    if env_path.exists():
+    api_key = os.environ.get("KCI_API_KEY", "").strip()
+    if not api_key and env_path.exists():
         for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -147,7 +158,8 @@ def read_kci_api_key(env_path=ENV_PATH):
             "KCI_API_KEY를 찾지 못했습니다.\n"
             "KCI Open API는 신청·승인 후 발급되는 인증키가 있어야 호출할 수 있습니다.\n"
             "발급 방법: open.kci.go.kr → Open API 신청(활용 목적·서비스 IP 기재) → 승인 후 인증키 확인\n"
-            "→ 저장소 루트의 .env 파일에 아래 한 줄을 추가해 주세요 (양식: .env.example).\n"
+            "→ 환경변수 KCI_API_KEY로 넘기거나, 저장소 루트의 .env 파일에 아래 한 줄을 추가해 주세요"
+            " (양식: .env.example).\n"
             "  KCI_API_KEY=발급받은키\n"
             "주의: 인증키는 신청 시 등록한 IP에서만 동작합니다 (계약 v6.4 7장 — 고정 IP 수집 서버).\n"
             "(.env는 .gitignore에 등록되어 있어 커밋되지 않습니다)"
@@ -308,19 +320,56 @@ def parse_article(record):
 
 
 class KciApiError(Exception):
-    """KCI가 오류 응답(인증키 오류 등)을 돌려줬다는 신호 — 재시도해도 같은 결과다."""
+    """KCI가 오류 응답(인증키 오류 등)을 돌려줬다는 신호 — 재시도해도 같은 결과다.
+
+    모든 교수에서 똑같이 나는 종류라 main()이 즉시 멈춘다.
+    """
+
+
+class KciUnexpectedResponseError(Exception):
+    """응답을 해석할 수 없다 — 논문도 없고, 0건이라는 근거도 없다.
+
+    KciApiError와 나누는 이유: 이쪽은 **일시적일 수 있다**(점검 페이지·프록시 오류·형식 변경).
+    그래서 재시도 경로를 그대로 타고, 끝까지 실패하면 그 교수만 fetchFailed로 남기고
+    다음 교수로 넘어간다. 절대 '논문 0건'으로 취급하지 않는다 — 그러면 조용히 전원의
+    수집 결과가 빈 값으로 덮여 버린다.
+    """
 
 
 # 결과 0건일 때 KCI가 보내는 안내 문구. 오류가 아니라 정상이다.
 # 2026-08-18 실측: <result><resultMsg>No Data</resultMsg></result>
 _NO_DATA_PATTERN = re.compile(r"no\s*data|no\s*result|데이터[가]?\s*없", re.I)
 
+# 로그에 남길 응답 원문 길이 (원인 파악용)
+_SNIPPET_CHARS = 200
+
+# 응답 안의 인증키를 가린다 — KCI는 요청을 그대로 되돌려 주므로 <key>에 키가 들어 있고,
+# 중간 프록시의 오류 페이지에는 요청 URL(?key=…)이 그대로 찍히기도 한다.
+_SECRET_PATTERNS = (
+    (re.compile(r"(<key>)[^<]*(</key>)", re.I), r"\1***\2"),
+    (re.compile(r"([?&]key=)[^&\s\"'<]+", re.I), r"\1***"),
+)
+
+
+def _mask_secrets(text):
+    """로그로 나갈 문자열에서 인증키를 가린다."""
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _snippet(xml_bytes):
+    """응답 원문 앞부분을 로그용 한 줄로 만든다 (인증키 마스킹 필수)."""
+    text = xml_bytes.decode("utf-8", errors="replace") if isinstance(xml_bytes, bytes) else str(xml_bytes)
+    text = re.sub(r"\s+", " ", _mask_secrets(text)).strip()
+    return text[:_SNIPPET_CHARS] + ("…" if len(text) > _SNIPPET_CHARS else "")
+
 
 def parse_response(xml_bytes):
     """응답 XML을 (논문 목록, 전체 건수)로 바꾼다. 전체 건수를 못 찾으면 None.
 
     - ET.fromstring은 XML 선언의 인코딩을 따르므로 bytes를 그대로 넘긴다.
-    - 오류면 KciApiError를 던진다. 결과 0건과 오류를 구분하기 위해서다 —
+    - 오류면 예외를 던진다. 결과 0건과 오류를 구분하기 위해서다 —
       0건은 정상이고, 오류는 사람이 손봐야 한다.
 
     2026-08-18 실측 — **오류에도 HTTP 200이 오고, error 태그는 없다.**
@@ -329,7 +378,12 @@ def parse_response(xml_bytes):
       · 인증키 오류 → "등록되지 않은 key 입니다."
       · 잘못된 코드 → "등록되지 않은 서비스"
     그래서 resultMsg가 'No Data' 계열이면 빈 결과로, 그 밖의 문구면 오류로 본다.
-    (문구를 모르면 오류로 취급한다 — 인증키 문제를 '논문 0건'으로 삼키는 쪽이 훨씬 위험하다)
+
+    **빈 결과로 인정하려면 근거가 있어야 한다 (fail-closed).**
+    논문도 없고 'No Data'도 <total>0</total>도 없는 응답은 우리가 해석할 수 없는 것이므로
+    0건이 아니라 KciUnexpectedResponseError로 처리한다. 점검 페이지·프록시 오류 페이지·
+    응답 형식 변경이 '논문 0건'으로 둔갑하면, 그 한 번의 실행으로 교수 전원의 수집 결과가
+    조용히 빈 값으로 덮여 버린다. 해석할 수 없으면 멈추는 쪽이 안전하다.
     """
     root = ET.fromstring(xml_bytes)  # 깨진 XML이면 ParseError → 호출한 쪽이 재시도
 
@@ -343,25 +397,13 @@ def parse_response(xml_bytes):
         # 나머지가 조용히 사라진다. 논문 단위로 쪼개되, 바깥에 있는 학술지명·발행연도는
         # 못 붙을 수 있으므로(그 값은 null이 된다) 사람이 알 수 있게 알린다.
         print(f"  ! 응답 구조 주의: record {len(records)}개 안에 논문 {len(article_infos)}편"
-              " — 논문 단위로 파싱합니다 (학술지·연도가 비면 README의 '실제 응답 구조' 참고)")
+              " — 논문 단위로 파싱합니다 (학술지·연도가 비면 scripts/README.md 4장 참고)")
         records = article_infos
 
     if not records:
         # 항목이 하나도 없다 — article-id 속성을 가진 요소가 있으면 그것을 논문으로 본다
         # (컨테이너 태그 이름이 가이드와 다른 경우 대비)
         records = [node for node in root.iter() if _attr(node, "article-id", "articleid")]
-
-    if not records:
-        # 결과가 없다 — 정상적인 0건인지, 오류인지 resultMsg로 가른다
-        for node in _iter_by_tag(root, "resultmsg", "errormsg", "errmsg", "error"):
-            message = _clean(node.text)
-            if not message:
-                continue
-            if _NO_DATA_PATTERN.search(message):
-                break               # 정상적인 0건
-            raise KciApiError(message)
-
-    articles = [a for a in (parse_article(r) for r in records) if a]
 
     # 전체 건수(있으면 마지막 쪽 판단에 쓴다). 태그 이름을 못 찾으면 None —
     # 그때는 '받은 건수 < displayCount'로 마지막 쪽을 판단한다.
@@ -371,6 +413,35 @@ def parse_response(xml_bytes):
         if digits and digits.isdigit():
             total = int(digits)
             break
+
+    if not records:
+        # 결과가 없다 — '정상적인 0건'이라는 근거를 찾는다. 없으면 오류다 (fail-closed)
+        for node in _iter_by_tag(root, "resultmsg", "errormsg", "errmsg", "error"):
+            message = _clean(node.text)
+            if not message:
+                continue
+            if _NO_DATA_PATTERN.search(message):
+                return [], total     # 근거 ①: "No Data" 안내 문구
+            # 아는 오류든 모르는 문구든 0건으로 삼키지 않는다
+            raise KciApiError(message)
+
+        if total == 0:
+            return [], total         # 근거 ②: <total>0</total>
+
+        # 근거가 없다 — 논문도 없고 0건이라는 표시도 없다. 우리가 해석할 수 없는 응답이다.
+        raise KciUnexpectedResponseError(
+            f"논문도 0건 안내도 없는 응답 (최상위 태그 <{_local(root.tag)}>): {_snippet(xml_bytes)}"
+        )
+
+    articles = [a for a in (parse_article(r) for r in records) if a]
+
+    if records and not articles:
+        # record는 있는데 하나도 논문으로 못 만들었다 = 전부 article-id가 없다.
+        # 형식이 바뀐 신호이므로 조용히 0건으로 두지 않는다 (kciId 없는 논문은 계약상 못 쓴다).
+        raise KciUnexpectedResponseError(
+            f"record {len(records)}개가 모두 article-id 없음: {_snippet(xml_bytes)}"
+        )
+
     return articles, total
 
 
@@ -379,17 +450,30 @@ def parse_response(xml_bytes):
 # ---------------------------------------------------------------------------
 
 def _describe_error(exc):
-    """예외를 기록용 한 줄로 요약한다 (HTTP 응답이 있으면 상태 코드, 없으면 예외 이름)."""
+    """예외를 기록용 한 줄로 요약한다 (HTTP 응답이 있으면 상태 코드, 없으면 예외 이름).
+
+    해석 불가 응답은 이름만 남기면 원인을 알 수 없으므로 사유(마스킹된 원문 포함)를 함께 남긴다.
+    """
     response = getattr(exc, "response", None)
     if response is not None:
         return f"HTTP {response.status_code}"
+    if isinstance(exc, KciUnexpectedResponseError):
+        return f"해석 불가 응답 — {exc}"
     return type(exc).__name__
+
+
+# 다시 시도해 볼 만한 실패 — 일시적일 수 있는 것들만 넣는다
+RETRYABLE_ERRORS = (
+    requests.exceptions.RequestException,   # 5xx·타임아웃·연결 끊김
+    ET.ParseError,                          # 응답이 중간에 잘려 XML이 깨진 경우
+    KciUnexpectedResponseError,             # 점검 페이지 등 해석할 수 없는 응답
+)
 
 
 def call_with_retry(description, func):
     """외부 API 호출 1건을 재시도로 감싼다. func는 인자 없는 함수(lambda)로 받는다.
 
-    - 5xx·네트워크 예외·XML 파싱 실패: 5초 → 15초 쉬며 최대 3회 시도
+    - 5xx·네트워크 예외·XML 파싱 실패·해석 불가 응답: 5초 → 15초 쉬며 최대 3회 시도
       (파싱 실패를 재시도에 넣는 이유: 응답이 중간에 잘리면 XML이 깨져 들어온다)
     - 4xx: 요청 자체의 문제라 다시 보내도 같은 결과 — 즉시 실패
     - KciApiError(인증키 오류 등)도 재시도하지 않는다 — 기다린다고 풀리지 않는다
@@ -397,7 +481,7 @@ def call_with_retry(description, func):
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
             return func()
-        except (requests.exceptions.RequestException, ET.ParseError) as exc:
+        except RETRYABLE_ERRORS as exc:
             response = getattr(exc, "response", None)
             if response is not None and 400 <= response.status_code < 500:
                 raise
@@ -913,15 +997,19 @@ def main():
         try:
             # 검색은 이름으로 한다 — 같은 이름의 교수가 여럿이어도 호출은 한 번뿐이다
             articles = fetch_articles(api_key, name)
-        except (requests.exceptions.RequestException, ET.ParseError) as exc:
-            # 이 교수는 저장하지 않는다 — 재실행하면 자동으로 다시 시도된다
+        except RETRYABLE_ERRORS as exc:
+            # 재시도까지 실패했다 — 이 교수는 **저장하지 않는다.**
+            # 빈 레코드(papers: [])를 남기지 않는 것이 중요하다: 그러면 다음 단계가
+            # '국내 논문 없음'으로 읽고, 재실행해도 완료된 것으로 보고 건너뛴다.
+            # 저장하지 않으면 이전 실행의 결과가 그대로 남고, 재실행 시 자동으로 다시 시도된다.
             drop_professor_reviews(state, name)
             state["review"]["fetchFailed"].append(
                 {"professorId": professor_id, "professor": name,
                  "stage": "articleSearch", "error": _describe_error(exc)}
             )
             save_state(state)
-            print(f"  → {name}: 통신 실패({_describe_error(exc)}) — fetchFailed 기록, 다음 교수로 계속")
+            print(f"  → {name}: 수집 실패({_describe_error(exc)})"
+                  " — fetchFailed 기록(레코드 미저장), 다음 교수로 계속")
             continue
         except KciApiError as exc:
             # 인증키·파라미터 오류는 모든 교수에서 똑같이 나므로 계속해 봐야 의미가 없다.

@@ -22,8 +22,10 @@ result/resultMsg 한 칸으로 오므로("No Data" vs "등록되지 않은 key �
 """
 
 import json
+import os
 import re
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import fetch_kci
@@ -566,7 +568,11 @@ class DuplicateTest(unittest.TestCase):
 
 
 class ApiKeyTest(unittest.TestCase):
-    """④ 키가 없을 때 안내 후 중단하는지"""
+    """④ 키가 없을 때 안내 후 중단하는지 · 환경변수를 .env보다 먼저 보는지
+
+    환경변수 우선 순서는 run_all.py의 `--env-file` 주입이 실제로 적용되게 하는 장치다
+    (enrich_citations.read_openalex_api_key와 같은 방식).
+    """
 
     def _env(self, text):
         path = Path(self.tmp) / ".env"
@@ -578,6 +584,34 @@ class ApiKeyTest(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmp = self._tmpdir.name
         self.addCleanup(self._tmpdir.cleanup)
+
+        # 실행 환경에 KCI_API_KEY가 있어도 테스트 결과가 흔들리지 않게 지웠다가 되돌린다
+        original = os.environ.get("KCI_API_KEY")
+        os.environ.pop("KCI_API_KEY", None)
+
+        def restore():
+            if original is None:
+                os.environ.pop("KCI_API_KEY", None)
+            else:
+                os.environ["KCI_API_KEY"] = original
+
+        self.addCleanup(restore)
+
+    def test_환경변수가_env_파일보다_우선(self):
+        """run_all.py가 --env-file 값을 환경변수로 주입하면 그 값이 쓰여야 한다."""
+        env = self._env("KCI_API_KEY=from-dotenv\n")
+        os.environ["KCI_API_KEY"] = "from-environ"
+        self.assertEqual(fetch_kci.read_kci_api_key(env), "from-environ")
+
+    def test_환경변수가_없으면_env_파일을_읽는다(self):
+        """단독 실행(환경변수 없음)에서는 지금까지처럼 루트 .env를 읽는다."""
+        env = self._env("KCI_API_KEY=from-dotenv\n")
+        self.assertEqual(fetch_kci.read_kci_api_key(env), "from-dotenv")
+
+    def test_환경변수가_빈_값이면_env_파일로_넘어간다(self):
+        env = self._env("KCI_API_KEY=from-dotenv\n")
+        os.environ["KCI_API_KEY"] = "   "
+        self.assertEqual(fetch_kci.read_kci_api_key(env), "from-dotenv")
 
     def test_env_파일_자체가_없으면_중단(self):
         with self.assertRaises(SystemExit) as ctx:
@@ -653,6 +687,122 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
 
+class FailClosedTest(unittest.TestCase):
+    """예상 밖 응답을 '논문 0건'으로 삼키지 않는지 (#31 리뷰 대응).
+
+    0건으로 저장하려면 근거가 있어야 한다 — "No Data" 안내나 <total>0</total>.
+    근거 없이 비어 있는 응답은 KciUnexpectedResponseError로 올려 재시도 경로를 타게 한다.
+    """
+
+    def test_근거가_있으면_정상_0건(self):
+        for label, xml in (
+            ("No Data 안내", SAMPLE_XML_EMPTY),
+            ("total 0", '<?xml version="1.0" encoding="UTF-8"?><MetaData><outputData>'
+                        "<result><total>0</total></result></outputData></MetaData>"),
+        ):
+            with self.subTest(label):
+                articles, _ = parse(xml)
+                self.assertEqual(articles, [])
+
+    def test_빈_응답은_오류(self):
+        """본문이 아예 없으면 XML 파싱 단계에서 걸린다 (재시도 대상)."""
+        with self.assertRaises(ET.ParseError):
+            fetch_kci.parse_response(b"")
+
+    def test_최상위_태그가_다른_XML은_오류(self):
+        """형식이 바뀌었거나 남의 응답이 온 경우 — 0건이 아니다."""
+        xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+               "<SomethingElse><data><item>1</item></data></SomethingElse>")
+        with self.assertRaises(fetch_kci.KciUnexpectedResponseError) as ctx:
+            parse(xml)
+        self.assertIn("SomethingElse", str(ctx.exception))
+
+    def test_HTML_오류_페이지는_오류(self):
+        """점검·프록시 오류 페이지가 XML로 파싱되더라도 0건으로 보지 않는다."""
+        html = ("<html><head><title>503 Service Unavailable</title></head>"
+                "<body><h1>서비스 점검 중입니다</h1></body></html>")
+        with self.assertRaises(fetch_kci.KciUnexpectedResponseError) as ctx:
+            parse(html)
+        self.assertIn("503", str(ctx.exception))     # 원인 파악용 원문 조각이 남는다
+
+    def test_잘린_XML은_오류(self):
+        """응답이 중간에 끊기면 XML이 깨진다 (재시도 대상)."""
+        with self.assertRaises(ET.ParseError):
+            parse('<?xml version="1.0"?><MetaData><outputData><record><articleInfo')
+
+    def test_record는_있는데_article_id가_없으면_오류(self):
+        """식별자가 사라진 응답 = 형식 변경 신호. 조용히 0편으로 두지 않는다 (계약 원칙 1)."""
+        xml = ('<?xml version="1.0" encoding="UTF-8"?><MetaData><outputData>'
+               "<result><total>2</total></result>"
+               "<record><articleInfo><article-title>제목1</article-title></articleInfo></record>"
+               "<record><articleInfo><article-title>제목2</article-title></articleInfo></record>"
+               "</outputData></MetaData>")
+        with self.assertRaises(fetch_kci.KciUnexpectedResponseError) as ctx:
+            parse(xml)
+        self.assertIn("article-id", str(ctx.exception))
+
+    def test_모르는_문구는_여전히_KciApiError(self):
+        """resultMsg가 있으면(문구를 몰라도) API가 준 오류다 — 재시도 대상이 아니다."""
+        xml = SAMPLE_XML_BAD_KEY.replace("등록되지 않은 key 입니다.", "일일 허용량 초과")
+        with self.assertRaises(fetch_kci.KciApiError):
+            parse(xml)
+
+    def test_원문_조각을_남기되_인증키는_가린다(self):
+        """원인 파악용 로그에 인증키가 새면 안 된다 — KCI는 응답에 키를 되돌려 준다."""
+        xml = ('<?xml version="1.0" encoding="UTF-8"?><Unknown>'
+               "<inputData><key>SECRET123</key><apiCode>articleSearch</apiCode></inputData>"
+               "</Unknown>")
+        with self.assertRaises(fetch_kci.KciUnexpectedResponseError) as ctx:
+            parse(xml)
+        message = str(ctx.exception)
+        self.assertNotIn("SECRET123", message)       # 키 원문이 남으면 안 된다
+        self.assertIn("<key>***</key>", message)     # 자리는 남겨 원인 파악은 가능하게
+        self.assertIn("articleSearch", message)      # 나머지 원문은 보인다
+
+    def test_URL에_실린_키도_가린다(self):
+        """프록시 오류 페이지에는 요청 URL이 그대로 찍히기도 한다."""
+        text = ("Bad Gateway while requesting https://open.kci.go.kr/po/openapi/openApiSearch.kci"
+                "?apiCode=articleSearch&key=SECRET123&author=hong")
+        masked = fetch_kci._mask_secrets(text)
+        self.assertNotIn("SECRET123", masked)
+        self.assertIn("key=***", masked)
+        self.assertIn("author=hong", masked)         # 다른 파라미터는 그대로 (원인 파악용)
+
+    def test_원문_조각은_길이를_제한한다(self):
+        """오류 한 줄이 응답 전체를 쏟아 내지 않게 앞부분만 남긴다."""
+        snippet = fetch_kci._snippet(("<A>" + "x" * 5000 + "</A>").encode("utf-8"))
+        self.assertLessEqual(len(snippet), fetch_kci._SNIPPET_CHARS + 1)   # +1 = 말줄임표
+        self.assertTrue(snippet.endswith("…"))
+
+    def test_해석_불가_응답은_재시도_대상(self):
+        """기존 재시도 경로(3회, 5→15초)를 그대로 탄다."""
+        original = fetch_kci.RETRY_WAITS
+        fetch_kci.RETRY_WAITS = [0, 0]
+        self.addCleanup(lambda: setattr(fetch_kci, "RETRY_WAITS", original))
+
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) < 3:
+                raise fetch_kci.KciUnexpectedResponseError("점검 페이지")
+            return "ok"
+
+        self.assertEqual(fetch_kci.call_with_retry("테스트", flaky), "ok")
+        self.assertEqual(len(calls), 3)
+
+    def test_끝까지_실패하면_예외가_올라온다(self):
+        original = fetch_kci.RETRY_WAITS
+        fetch_kci.RETRY_WAITS = [0, 0]
+        self.addCleanup(lambda: setattr(fetch_kci, "RETRY_WAITS", original))
+
+        def always_bad():
+            raise fetch_kci.KciUnexpectedResponseError("점검 페이지")
+
+        with self.assertRaises(fetch_kci.KciUnexpectedResponseError):
+            fetch_kci.call_with_retry("테스트", always_bad)
+
+
 class SaveStateTest(unittest.TestCase):
     """산출물 저장 — 윈도우에서 파일이 잠겨 있어도 실행이 죽지 않아야 한다.
 
@@ -707,6 +857,103 @@ class SaveStateTest(unittest.TestCase):
         self.assertEqual(
             json.loads(tmp.read_text(encoding="utf-8"))["professors"]["P-001"]["name"], "강경표"
         )
+
+
+class FailureDoesNotOverwriteTest(unittest.TestCase):
+    """수집 실패가 기존 데이터를 덮어쓰지 않는지 (#31 리뷰 대응).
+
+    main()을 실제로 돌리되 네트워크·입력 파일은 대역으로 바꾼다.
+    """
+
+    def setUp(self):
+        import tempfile
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.output = Path(self._tmpdir.name) / "kci_papers.json"
+
+        # 저장 위치·대기시간·인증키·대상 명단·PubMed 대조표를 테스트용으로 갈아 끼운다
+        saved = {name: getattr(fetch_kci, name)
+                 for name in ("OUTPUT_PATH", "PUBMED_PATH", "RETRY_WAITS", "SAVE_RETRY_WAIT",
+                              "load_targets", "read_kci_api_key", "fetch_page")}
+        self.addCleanup(lambda: [setattr(fetch_kci, k, v) for k, v in saved.items()])
+
+        fetch_kci.OUTPUT_PATH = self.output
+        fetch_kci.PUBMED_PATH = Path(self._tmpdir.name) / "없는파일.json"   # 대조 없이 진행
+        fetch_kci.RETRY_WAITS = [0, 0]
+        fetch_kci.SAVE_RETRY_WAIT = 0
+        fetch_kci.read_kci_api_key = lambda *a, **k: "FAKE-KEY"
+        fetch_kci.load_targets = lambda: (
+            [{"id": "P-001", "name": "강경표"}, {"id": "P-002", "name": "강상율"}],
+            {"강경표": ["P-001"], "강상율": ["P-002"]},
+        )
+
+        original_sleep = fetch_kci.time.sleep
+        fetch_kci.time.sleep = lambda seconds: None
+        self.addCleanup(lambda: setattr(fetch_kci.time, "sleep", original_sleep))
+
+    def _ok_xml(self, name):
+        return (f'<?xml version="1.0" encoding="UTF-8"?><MetaData><outputData>'
+                f"<result><total>1</total></result><record>"
+                f"<journalInfo><journal-name>학회지</journal-name><pub-year>2021</pub-year></journalInfo>"
+                f'<articleInfo article-id="ART{abs(hash(name)) % 10000:04d}">'
+                f"<title-group><article-title>논문</article-title></title-group>"
+                f"<author-group><author>{name}(전북대학교)</author></author-group>"
+                f"</articleInfo></record></outputData></MetaData>").encode("utf-8")
+
+    def _state(self):
+        return json.loads(self.output.read_text(encoding="utf-8"))
+
+    def test_해석_불가_응답이면_레코드를_만들지_않는다(self):
+        """빈 papers를 저장하면 다음 단계가 '국내 논문 없음'으로 읽는다 — 그러면 안 된다."""
+        broken = b'<?xml version="1.0"?><html><body>503 Service Unavailable</body></html>'
+        fetch_kci.fetch_page = lambda key, name, page: fetch_kci.parse_response(
+            broken if name == "강경표" else self._ok_xml(name)
+        )
+        fetch_kci.main()
+
+        state = self._state()
+        self.assertNotIn("P-001", state["professors"])          # 빈 레코드조차 없다
+        self.assertIn("P-002", state["professors"])             # 정상 교수는 그대로 저장
+        failed = state["review"]["fetchFailed"]
+        self.assertEqual([e["professorId"] for e in failed], ["P-001"])
+        self.assertIn("해석 불가 응답", failed[0]["error"])
+        self.assertEqual(state["review"]["noResult"], [])       # 0건으로도 기록하지 않는다
+
+    def test_실패해도_먼저_저장된_교수의_논문은_남는다(self):
+        """1회차에 정상 수집 → 2회차에 API 장애 → 기존 논문이 살아 있어야 한다."""
+        fetch_kci.fetch_page = lambda key, name, page: fetch_kci.parse_response(self._ok_xml(name))
+        fetch_kci.main()
+        before = self._state()["professors"]
+        self.assertEqual(len(before["P-001"]["papers"]), 1)
+
+        broken = b'<?xml version="1.0"?><Maintenance>service down</Maintenance>'
+        fetch_kci.fetch_page = lambda key, name, page: fetch_kci.parse_response(broken)
+        fetch_kci.main()   # resume: 이미 저장된 교수는 호출조차 하지 않는다
+
+        after = self._state()["professors"]
+        self.assertEqual(len(after["P-001"]["papers"]), 1)      # 0건으로 덮이지 않았다
+        self.assertEqual(after["P-001"]["papers"], before["P-001"]["papers"])
+        self.assertEqual(after["P-002"]["papers"], before["P-002"]["papers"])
+
+    def test_인증키_오류는_즉시_중단한다(self):
+        """모든 교수에서 똑같이 나는 오류라 재시도·계속이 의미 없다 (기존 동작 유지)."""
+        bad_key = SAMPLE_XML_BAD_KEY.encode("utf-8")
+        fetch_kci.fetch_page = lambda key, name, page: fetch_kci.parse_response(bad_key)
+        with self.assertRaises(SystemExit) as ctx:
+            fetch_kci.main()
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertEqual(self._state()["professors"], {})       # 빈 레코드를 만들지 않는다
+
+    def test_근거_있는_0건은_정상_저장(self):
+        """"No Data"는 진짜 0건이므로 빈 papers + noResult로 저장한다 (fail-closed와 구분)."""
+        empty = SAMPLE_XML_EMPTY.encode("utf-8")
+        fetch_kci.fetch_page = lambda key, name, page: fetch_kci.parse_response(empty)
+        fetch_kci.main()
+
+        state = self._state()
+        self.assertEqual(state["professors"]["P-001"]["papers"], [])
+        self.assertEqual(state["review"]["fetchFailed"], [])
+        self.assertEqual([e["professorId"] for e in state["review"]["noResult"]], ["P-001", "P-002"])
 
 
 class PagingTest(unittest.TestCase):
