@@ -14,9 +14,11 @@ PubMed 수집(3단계)에서 국내 논문은 `pmid`가 없어 담지 못했습�
 - **이 단계는 KCI 산출물 생성까지입니다.** PubMed 논문과의 병합은 다음(조립) 단계이며,
   여기서는 `duplicateOf`에 "같은 논문으로 보이는 pmid"만 표시합니다.
 
-> ⚠️ **인증키 발급 대기 중(2026-08-16)** — 구현과 오프라인 단위 테스트까지만 마쳤고
-> **실제 응답으로는 아직 검증하지 못했습니다.** 키가 생기면 아래 "실제 응답에서 확인할 것"을
-> 먼저 대조해 주세요.
+> ✅ **2026-08-18 실제 응답으로 검증 완료** — 아래 "실제 응답 구조(실측)"가 그 결과입니다.
+> 단위 테스트의 표본 XML도 실제 응답 구조로 갈아 끼웠습니다.
+>
+> 🔐 **응답에 인증키가 그대로 돌아옵니다** (`<inputData><key>`). 응답 원문을 파일로 저장하거나
+> 이슈·채팅에 붙일 때는 이 부분을 지우세요. 산출물(`kci_papers.json`)에는 들어가지 않습니다.
 
 ## 원칙 (계약 0-1)
 
@@ -80,12 +82,16 @@ LIMIT = 2       # 대상 명단 앞 2명만 처리 (None이면 전체 182명)
 python scripts/kci_collector/fetch_kci.py
 ```
 
-첫 실행에서는 **결과 한 건을 눈으로 확인**해 주세요 — 아래 "실제 응답에서 확인할 것" 표가 검수 항목입니다.
+첫 실행에서는 **결과 한 건을 눈으로 확인**해 주세요 — 아래 "실제 응답 구조(실측)"와 대조하면 됩니다.
+(응답 형식이 바뀌었다면 여기서 티가 납니다: 채택 0편이거나 제목·학술지가 비어 나옵니다)
 
 ### 3. 전체 실행
 
 `LIMIT = None`으로 되돌리고 같은 명령을 실행합니다.
-교수 1명당 최소 0.5초(+ 페이지 수만큼)를 쉬므로 182명이면 대략 2~5분 걸립니다.
+교수 1명당 최소 0.5초(+ 결과가 100편을 넘으면 쪽 수만큼 더)를 쉽니다.
+실측(2026-08-18): 182명 전체 수집(FORCE_REFRESH)에 **약 15분**(899초)이 걸렸습니다.
+동명이인이 많은 이름은 결과가 수백~수천 건이라 여러 쪽을 돕니다
+(이창훈 1,489건 · 김종현 983건 · 김원 945건 — 검색 결과 총 50,216편).
 결과는 `data/output/kci_papers.json` (`data/output/`은 커밋 제외 폴더입니다).
 
 ### 4. 재개(resume) · 다시 수집
@@ -101,20 +107,21 @@ python scripts/kci_collector/fetch_kci.py
 python -m unittest discover -s scripts/kci_collector -v
 ```
 
-표본 XML은 활용가이드의 필드 이름을 본떠 만든 것이며 **실제 응답이 아닙니다.**
-통과해도 실제 응답 파싱이 보장되지는 않습니다 — 구조가 그 모양일 때의 동작까지만 고정합니다.
+표본 XML은 **2026-08-18 실제 응답 구조 그대로**입니다(내용만 축약·치환).
+특히 `test_결과_0건과_오류_구분`은 반드시 유지하세요 — 이 구분이 깨지면
+인증키가 틀렸을 때 182명 전원이 조용히 '논문 0건'으로 저장됩니다.
 
 ## 산출물 — `data/output/kci_papers.json`
 
 ```json
 {
-  "collectedAt": "2026-08-16",
+  "collectedAt": "2026-08-18",
   "professors": {
     "P-012": {
       "name": "황주희",
       "papers": [
         { "kciId": "ART002712345", "title": "국내 심부전 …", "titleEn": "Prognostic Factors …",
-          "journal": "대한내과학회지", "year": 2021, "doi": "10.3904/…", "url": "https://www.kci.go.kr/…",
+          "journal": "대한내과학회지", "year": 2021, "doi": "http://dx.doi.org/10.3904/…", "url": "https://www.kci.go.kr/…",
           "citedByCountKci": 4, "abstract": "…", "abstractEn": "…", "duplicateOf": "38123456" }
       ],
       "authorInfo": {
@@ -174,21 +181,67 @@ python -m unittest discover -s scripts/kci_collector -v
 > **PubMed 수집에 `doi`가 추가되면 1순위 규칙(DOI 일치)이 켜져 판별 정확도가 올라갑니다.**
 > 이 코드는 `doi` 칸이 생기면 수정 없이 그대로 1번 규칙을 쓰며, PubMed 쪽 보완은 **별도 PR**입니다.
 
-## 실제 응답에서 확인할 것 (키 발급 후 첫 실행)
+## 실제 응답 구조 (2026-08-18 실측)
 
-파싱은 태그 위치를 고정하지 않고 **이름으로 자손을 찾는 방식**이라 중첩 구조가 달라도 견디지만,
-**태그·속성 이름 자체가 다르면 값이 조용히 `null`이 됩니다.** 아래를 눈으로 대조해 주세요.
+```xml
+<MetaData>
+  <inputData>            <!-- 요청을 그대로 되돌려 준다. key도 포함되므로 원문 공유 주의 -->
+    <key>…</key><apiCode>articleSearch</apiCode><author>강경표</author>
+    <page>1</page><displayCount>100</displayCount>
+  </inputData>
+  <outputData>
+    <result><total>69</total></result>          <!-- 결과가 없으면 total 대신 resultMsg -->
+    <record>
+      <journalInfo>
+        <journal-name>대한내과학회지</journal-name>   <!-- lang 속성 없음 -->
+        <publisher-name>…</publisher-name>
+        <pub-year>2021</pub-year><pub-mon>03</pub-mon><volume>96</volume><issue>1</issue>
+      </journalInfo>
+      <articleInfo article-id="ART003365943">        <!-- ← kciId -->
+        <article-categories>…</article-categories><article-regularity>Y</article-regularity>
+        <title-group>
+          <article-title lang="original"><![CDATA[…]]></article-title>
+          <article-title lang="foreign"><![CDATA[…]]></article-title>   <!-- 있을 때만 -->
+          <article-title lang="english"><![CDATA[…]]></article-title>
+        </title-group>
+        <author-group>
+          <author english="Kyung Pyo Kang" orc-id="0000-…">강경표(전북대학교 의과대학 내과학교실)</author>
+        </author-group>
+        <abstract-group>
+          <abstract lang="original"><![CDATA[…]]></abstract>
+          <abstract lang="english"><![CDATA[…]]></abstract>
+        </abstract-group>
+        <fpage>…</fpage><lpage>…</lpage>
+        <doi>http://dx.doi.org/10.3904/kjm.2026.101.4.209</doi>   <!-- 빈 값인 논문이 절반쯤 -->
+        <uci></uci>
+        <citation-count kci="4" wos="0">4</citation-count>        <!-- kci 속성을 쓴다 -->
+        <url>https://www.kci.go.kr/…artiId=ART003365943</url>
+        <verified>Y</verified>
+      </articleInfo>
+    </record>
+  </outputData>
+</MetaData>
+```
 
-| 확인 항목 | 다르면 고칠 곳 |
-| --- | --- |
-| `kciId`가 `ART…`로 채워지는가 (`articleInfo@article-id`) | `parse_article` — 없으면 그 논문을 통째로 버리므로 가장 중요 |
-| 저자 소속이 `이름(소속기관)` 형태로 오는가 | `parse_author`(괄호·속성·하위 요소 순으로 찾음) |
-| 소속이 **영문**(`Jeonbuk/Chonbuk National University`)으로만 오는 논문이 있는가 | `AFFILIATION_KEYWORDS`에 영문 표기 추가 |
-| 피인용수가 `citation-count@kci`인가, 요소 텍스트인가 | 둘 다 지원 — 이름이 다르면 `parse_article` 수정 |
-| 초록·제목의 `lang` 값이 `original`/`english`인가 | `_LANG_ALIASES` |
-| 결과 0건 응답과 오류 응답의 모양 | `parse_response`(태그에 `error`가 있어야 오류로 인식) |
-| 전체 건수(`total`) 태그가 있는가 | 없으면 "받은 건수 < 100"으로 마지막 쪽을 판단합니다 (동작에는 지장 없음) |
-| `displayCount=100` · `page` 파라미터 이름이 맞는가 | `fetch_page` |
+### 작성 당시 예상과 달랐던 것 (코드 수정으로 반영됨)
+
+| 항목 | 실측 | 대응 |
+| --- | --- | --- |
+| **오류 응답** | `error` 태그가 **없다.** 오류도 **HTTP 200**이고, 결과 0건과 **같은 자리**(`result/resultMsg`)에 문구만 다르게 온다. 0건="No Data" / 키 오류="등록되지 않은 key 입니다." / 잘못된 코드="등록되지 않은 서비스" | `parse_response`가 `resultMsg`를 읽어 'No Data' 계열만 0건으로 보고, 나머지 문구는 모두 오류로 던진다. **모르는 문구도 오류로 취급** — 인증키 문제를 '논문 0건'으로 삼키면 182명이 통째로 빈 결과가 되기 때문 |
+| **저자 소속 표기** | 대부분 한글(`전북대학교`·`전북대학교병원`·`전북대학교 의과대학 내과학교실`)이지만 **영문만 오는 논문이 실제로 있다** (`…, Jeonbuk National University Hospital, Jeonju`, 옛 표기 `Chonbuk National University …`) | `AFFILIATION_KEYWORDS`에 `jeonbuk national univ`·`chonbuk national univ` 추가(대소문자 무시). `jeonbuk`만 넣으면 전북 소재 무관 기관까지 걸려서 전체 표기를 키워드로 씀 |
+| `doi` | 값이 있으면 **전체 URL**(`http://dx.doi.org/…`), 없으면 빈 요소. 강경표 69편 중 35편만 값 있음 | 원본 그대로 저장하고(원칙 4), 비교할 때만 `normalize_doi`로 접두 URL 제거 |
+| `citation-count` | `kci`·`wos` **두 속성 + 텍스트**를 모두 가짐 (텍스트는 kci와 같은 값) | `kci` 속성을 쓴다. `kci="0"`은 0회 인용(값 있음), 태그 자체가 없으면 `null`(미상) |
+| `article-title` `lang` | `original` / `english` 외에 **`foreign`** 이 있다 | `english`만 `titleEn`으로 쓴다(`foreign`은 영어가 아닐 수 있음) |
+| `journal-name` | `lang` 속성이 **없다** | 속성 없는 노드를 원어로 보는 기존 처리로 그대로 동작 |
+| 제목·초록 | **CDATA**로 감싸여 온다 | ElementTree가 자동 처리 — 수정 불필요 |
+| `displayCount` | **최소 10 · 최대 100** (5를 보내면 10, 200을 보내면 100으로 조정됨) | 100 사용 — 변경 없음 |
+| `page` | 정상 동작 (1쪽과 2쪽 결과가 겹치지 않음, 끝을 넘기면 0건) | 변경 없음 |
+| `author` 단독 검색 | **동작한다** (`title` 없이도 검색됨) — 다만 동명이인이 대량으로 섞인다 (강상율 367건 중 본인 18건) | 소속 판정으로 거른다 |
+
+### 아직 확인되지 않은 것
+
+- `affiliation` 검색 파라미터의 정확한 이름·표기 규칙 (기본값 `USE_AFFILIATION_PARAM = False` 유지)
+- 일일 호출 한도. 182명 전체 실행(약 300여 회 호출)에서는 한도 오류가 나지 않았습니다
 
 ## 자주 생기는 문제
 
@@ -198,6 +251,7 @@ python -m unittest discover -s scripts/kci_collector -v
 | `KCI가 오류 응답을 돌려줬습니다: …` 후 중단 | 인증키·IP·파라미터 문제. 모든 교수에서 같은 오류가 나므로 여기서 멈춥니다. 키를 고치고 다시 실행하면 완료분은 건너뜁니다 |
 | 채택 0편인데 검색 결과는 많음 | 소속 표기가 예상과 다름 → `review.affiliationUnmatched`의 `affiliations`를 확인 후 `AFFILIATION_KEYWORDS` 조정 |
 | `… 20쪽까지만 수집했습니다` | 한 이름의 결과가 2,000건 초과 → `MAX_PAGES` 조정 검토 |
+| `저장 실패: kci_papers.json을 다른 프로그램이 열고 있습니다` | 윈도우에서 편집기·백신 등이 산출물을 잡고 있는 것. 0.5초 간격으로 5회까지 다시 시도하고, 그래도 안 되면 `.json.tmp`에 남긴 뒤 다음 저장에서 반영합니다. **실행 중에는 산출물 파일을 열지 마세요** (실측: 진행 상황을 보려고 파일을 읽다가 실행이 중단됐습니다) |
 | 영문명·ORCID가 여러 개라는 경고 | 동명이인이 섞였을 가능성 → `authorInfo.orcidCandidates`와 해당 교수 논문 검수 |
 | `papers`가 비었는데 `stats.found`는 큼 | `stats.homonymUnassigned`가 0보다 크면 **동명이인 배정 보류**, 0이면 소속 불일치로 전부 제외된 것 |
 

@@ -28,10 +28,13 @@ fetchFailed 교수는 저장되지 않으므로 재실행하면 자동으로 다
 - 원칙 4: 수집 기준일(collectedAt)을 담고, 제목·학술지·연도는 KCI 원본 그대로 둔다.
 - 1-2 중복 처리: ① DOI 일치 → ② (DOI 없으면) 정규화 제목 + 연도 일치 → ③ 애매하면 별개.
 
-주의(2026-08-16 현재): KCI 인증키가 발급 대기 중이라 **실제 응답으로 검증하지 못했다.**
+2026-08-18 실제 응답으로 검증했다. 실측에서 예상과 달랐던 두 가지가 코드에 반영돼 있다:
+- **오류에도 HTTP 200이 오고 error 태그가 없다.** 결과 0건("No Data")과 인증키 오류가
+  똑같이 result/resultMsg로 오므로, 문구로 갈라 낸다 (parse_response 참고).
+  이걸 틀리면 키 오류가 '논문 0건'으로 삼켜져 전원이 빈 결과로 저장된다.
+- 저자 소속이 **영문으로만 오는 논문이 있다** → AFFILIATION_KEYWORDS에 영문 표기를 넣었다.
 파싱은 태그 위치를 고정하지 않고 이름으로 자손을 찾는 방식(_iter_by_tag)이라 중첩 구조가
-가이드와 달라도 견디게 만들었지만, 태그 '이름' 자체가 다르면 값이 null로 비게 된다.
-키 발급 후 첫 실행에서 README의 '실제 응답에서 확인할 것' 항목을 반드시 대조할 것.
+바뀌어도 견디지만, 태그 '이름' 자체가 바뀌면 값이 null로 빈다. 응답 구조는 README 참고.
 """
 
 import difflib
@@ -73,10 +76,28 @@ SLEEP_SECONDS = 0.5
 RETRY_ATTEMPTS = 3
 RETRY_WAITS = [5, 15]        # 시도 사이 대기(초): 1→2회차 5초, 2→3회차 15초
 
+# 산출물 저장(파일 교체) 재시도 — 윈도우에서 다른 프로그램이 파일을 열고 있을 때를 대비
+SAVE_ATTEMPTS = 5
+SAVE_RETRY_WAIT = 0.5
+
 # 본인 논문 판정 키워드 — 저자 소속에 이 문자열이 들어 있어야 채택한다 (지시서 2-3-c).
-# 실제 응답에 "Jeonbuk National University"처럼 영문 소속만 오는 논문이 있다면 여기에
-# 영문 표기를 추가해야 한다. 확인 전에는 지시서 기준(한글 "전북대")만 둔다 — 지어내지 않기.
-AFFILIATION_KEYWORDS = ("전북대",)
+# 비교는 소문자로 하므로 영문 키워드는 소문자로 적는다.
+#
+# 2026-08-18 실측: 소속은 대부분 한글("전북대학교", "전북대학교병원", "전북대학교 의과대학
+# 내과학교실")이지만 영문으로만 오는 논문이 실제로 있었다
+# (예: "Center for Clinical Pharmacology, Jeonbuk National University Hospital, Jeonju").
+# 한글 키워드만 두면 이런 논문이 '타 기관'으로 빠지므로 영문 표기를 함께 넣는다.
+# "jeonbuk"만 넣지 않는 이유: 전북대와 무관한 지역 기관(전북 소재 연구원 등)까지 걸린다.
+AFFILIATION_KEYWORDS = (
+    "전북대",                    # 전북대학교 · 전북대학교병원 · 전북대학병원 · 전북대학교 의과대학
+    "전북의대",                  # 의학 논문에서 흔한 약칭 (전북의대 내과학 / 전북의대 산부인과 …)
+    "전북의학전문대학원",         # 의전원 시기 표기
+    "jeonbuk national univ",    # Jeonbuk National University / University Hospital / Univ.
+    "chonbuk national univ",    # 옛 로마자 표기 (2020년 이전 논문)
+    # ↓ KCI가 긴 영문 소속을 150자에서 잘라 "…of Jeonbuk"으로 끝나는 경우가 있다.
+    #   전북대학교병원 임상의학연구소의 정식 영문명이라 다른 기관과 헷갈리지 않는다.
+    "research institute of clinical medicine of jeonbuk",
+)
 
 # 제목이 완전히 같지는 않지만 이만큼 닮았고 연도도 같으면 "애매"로 분류해 사람에게 넘긴다.
 DUPLICATE_SIMILARITY = 0.85
@@ -290,12 +311,25 @@ class KciApiError(Exception):
     """KCI가 오류 응답(인증키 오류 등)을 돌려줬다는 신호 — 재시도해도 같은 결과다."""
 
 
+# 결과 0건일 때 KCI가 보내는 안내 문구. 오류가 아니라 정상이다.
+# 2026-08-18 실측: <result><resultMsg>No Data</resultMsg></result>
+_NO_DATA_PATTERN = re.compile(r"no\s*data|no\s*result|데이터[가]?\s*없", re.I)
+
+
 def parse_response(xml_bytes):
     """응답 XML을 (논문 목록, 전체 건수)로 바꾼다. 전체 건수를 못 찾으면 None.
 
     - ET.fromstring은 XML 선언의 인코딩을 따르므로 bytes를 그대로 넘긴다.
-    - 오류 응답(태그 이름에 error가 든 요소)이면 KciApiError를 던진다. 결과 0건과
-      오류를 구분하기 위해서다 — 0건은 정상이고, 오류는 사람이 손봐야 한다.
+    - 오류면 KciApiError를 던진다. 결과 0건과 오류를 구분하기 위해서다 —
+      0건은 정상이고, 오류는 사람이 손봐야 한다.
+
+    2026-08-18 실측 — **오류에도 HTTP 200이 오고, error 태그는 없다.**
+    결과도 오류도 모두 <result><resultMsg>…</resultMsg></result> 한 칸으로 온다:
+      · 결과 0건    → "No Data"
+      · 인증키 오류 → "등록되지 않은 key 입니다."
+      · 잘못된 코드 → "등록되지 않은 서비스"
+    그래서 resultMsg가 'No Data' 계열이면 빈 결과로, 그 밖의 문구면 오류로 본다.
+    (문구를 모르면 오류로 취급한다 — 인증키 문제를 '논문 0건'으로 삼키는 쪽이 훨씬 위험하다)
     """
     root = ET.fromstring(xml_bytes)  # 깨진 XML이면 ParseError → 호출한 쪽이 재시도
 
@@ -309,7 +343,7 @@ def parse_response(xml_bytes):
         # 나머지가 조용히 사라진다. 논문 단위로 쪼개되, 바깥에 있는 학술지명·발행연도는
         # 못 붙을 수 있으므로(그 값은 null이 된다) 사람이 알 수 있게 알린다.
         print(f"  ! 응답 구조 주의: record {len(records)}개 안에 논문 {len(article_infos)}편"
-              " — 논문 단위로 파싱합니다 (학술지·연도가 비면 README의 '실제 응답에서 확인할 것' 참고)")
+              " — 논문 단위로 파싱합니다 (학술지·연도가 비면 README의 '실제 응답 구조' 참고)")
         records = article_infos
 
     if not records:
@@ -318,10 +352,14 @@ def parse_response(xml_bytes):
         records = [node for node in root.iter() if _attr(node, "article-id", "articleid")]
 
     if not records:
-        for node in root.iter():
-            if "error" in _local(node.tag):
-                detail = _clean(node.text) or _clean(json.dumps(node.attrib, ensure_ascii=False))
-                raise KciApiError(f"<{_local(node.tag)}> {detail}")
+        # 결과가 없다 — 정상적인 0건인지, 오류인지 resultMsg로 가른다
+        for node in _iter_by_tag(root, "resultmsg", "errormsg", "errmsg", "error"):
+            message = _clean(node.text)
+            if not message:
+                continue
+            if _NO_DATA_PATTERN.search(message):
+                break               # 정상적인 0건
+            raise KciApiError(message)
 
     articles = [a for a in (parse_article(r) for r in records) if a]
 
@@ -427,10 +465,14 @@ def normalize_name(text):
 
 
 def is_jbnu(affiliation):
-    """소속 문자열이 전북대 계열인지 (AFFILIATION_KEYWORDS 중 하나라도 포함하면 참)."""
+    """소속 문자열이 전북대 계열인지 (AFFILIATION_KEYWORDS 중 하나라도 포함하면 참).
+
+    영문 표기가 대소문자 섞여 오므로 소문자로 맞춰 비교한다 (한글은 영향 없음).
+    """
     if not affiliation:
         return False
-    return any(keyword in affiliation for keyword in AFFILIATION_KEYWORDS)
+    text = affiliation.lower()
+    return any(keyword in text for keyword in AFFILIATION_KEYWORDS)
 
 
 def match_self_author(article, name):
@@ -785,13 +827,30 @@ def save_state(state):
     """교수 1명이 끝날 때마다 호출 — 중간에 끊겨도 여기까지는 남는다.
 
     임시 파일에 먼저 쓰고 바꿔치기해서, 저장 도중 끊겨도 기존 파일이 깨지지 않게 한다.
+
+    바꿔치기(os.replace)를 재시도하는 이유 — 윈도우에서는 다른 프로그램이 산출물 파일을
+    열어 두고 있으면 교체가 PermissionError(WinError 5)로 실패한다. 실측에서 진행 상황을
+    보려고 파일을 읽는 것만으로도 40분짜리 실행이 여기서 죽었다. 편집기·백신·백업 도구도
+    같은 일을 하므로, 잠깐 기다렸다 다시 시도한다. (열려 있는 시간은 대개 순간이다)
     """
     state["collectedAt"] = date.today().isoformat()  # 수집 기준일 (계약 원칙 4)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = OUTPUT_PATH.with_suffix(".json.tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)  # ensure_ascii=False: 한글 보존
-    os.replace(tmp_path, OUTPUT_PATH)
+
+    for attempt in range(1, SAVE_ATTEMPTS + 1):
+        try:
+            os.replace(tmp_path, OUTPUT_PATH)
+            return
+        except PermissionError:
+            if attempt == SAVE_ATTEMPTS:
+                # 여기까지 왔으면 파일이 계속 잡혀 있다. 수집 결과를 버리지 않도록
+                # 임시 파일을 남겨 두고 알린다 — 다음 저장에서 다시 교체를 시도한다.
+                print(f"  ! 저장 실패: {OUTPUT_PATH.name}을 다른 프로그램이 열고 있습니다."
+                      f" 임시 파일을 남겨 둡니다({tmp_path.name}) — 파일을 닫으면 다음 저장에서 반영됩니다")
+                return
+            time.sleep(SAVE_RETRY_WAIT)
 
 
 def print_summary(state, elapsed_seconds, run_professors):

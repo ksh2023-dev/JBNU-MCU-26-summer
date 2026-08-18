@@ -1,15 +1,28 @@
 """fetch_kci.py 오프라인 단위 테스트 (지시서 3장).
 
-인증키가 아직 없어 실제 호출을 못 하므로, **네트워크 없이** 검증할 수 있는 부분을 고정한다.
-표본 XML은 활용가이드에 적힌 필드 이름(article-id / article-title / author@english /
-author@orc-id / citation-count 등)을 본떠 만든 것이며 실제 응답을 받아 만든 것이 아니다.
-따라서 이 테스트가 통과한다고 실제 응답 파싱이 보장되지는 않는다 —
-"구조가 이 모양이면 이렇게 동작한다"까지가 이 테스트의 범위다.
+표본 XML은 **2026-08-18 실제 KCI 응답을 받아 그 구조 그대로** 만든 것이다
+(교수명·논문 정보만 바꿔 축약). 실측으로 확인한 실제 구조는 다음과 같다:
+
+    MetaData > inputData(key·apiCode·author·page·displayCount 에코)
+             > outputData > result > total
+                          > record > journalInfo(journal-name·publisher-name·pub-year·…)
+                                   > articleInfo@article-id
+                                       > title-group > article-title lang=original|foreign|english
+                                       > author-group > author@english@orc-id  "이름(소속기관)"
+                                       > abstract-group > abstract lang=original|english
+                                       > doi(전체 URL 또는 빈 값) · uci · url
+                                       > citation-count@kci@wos (텍스트에도 같은 수)
+
+주의(실측): **오류에도 HTTP 200이 오고 error 태그는 없다.** 결과 0건과 오류가 모두
+result/resultMsg 한 칸으로 오므로("No Data" vs "등록되지 않은 key 입니다.") 이를 가르는
+테스트를 반드시 유지해야 한다 — 이 구분이 깨지면 인증키 오류가 '논문 0건'으로 삼켜진다.
 
 실행 (저장소 루트에서):
     python -m unittest discover -s scripts/kci_collector -v
 """
 
+import json
+import re
 import unittest
 from pathlib import Path
 
@@ -17,41 +30,59 @@ import fetch_kci
 
 
 # ---------------------------------------------------------------------------
-# 표본 XML — 가이드에 적힌 필드 이름을 본뜬 것 (실제 응답 아님)
+# 표본 XML — 2026-08-18 실제 응답 구조 그대로 (내용만 축약·치환)
 # ---------------------------------------------------------------------------
 
-# 정상 응답: 3편
-#  ① 본인(전북대) 논문 — 모든 칸이 채워진 형태. DOI가 PubMed 논문과 같다
+# 정상 응답: 4편
+#  ① 본인(전북대) 논문 — 실제 응답의 모든 칸을 갖춘 형태. doi가 URL로 오는 것도 실측 그대로
 #  ② 동명이인(타 기관) 논문 — 채택되면 안 된다
-#  ③ 소속이 비어 있는 논문 — 채택되면 안 된다
+#  ③ 소속이 비어 있는 논문 — 채택되면 안 된다 (실측: 315명 중 12명이 괄호 없는 표기였다)
+#  ④ 소속이 영문으로만 오는 본인 논문 — 실측으로 확인된 형태. 채택되어야 한다
 SAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <MetaData>
+  <inputData>
+    <key>MASKED</key>
+    <apiCode>articleSearch</apiCode>
+    <author>황주희</author>
+    <page>1</page>
+    <displayCount>100</displayCount>
+  </inputData>
   <outputData>
     <result>
-      <total>3</total>
-      <page>1</page>
-      <displayCount>100</displayCount>
+      <total>4</total>
     </result>
     <record>
       <journalInfo>
-        <journal-name lang="original">대한내과학회지</journal-name>
-        <journal-name lang="english">The Korean Journal of Medicine</journal-name>
+        <journal-name>대한내과학회지</journal-name>
+        <publisher-name>대한내과학회</publisher-name>
         <pub-year>2021</pub-year>
+        <pub-mon>03</pub-mon>
+        <volume>96</volume>
+        <issue>1</issue>
       </journalInfo>
       <articleInfo article-id="ART002712345">
-        <article-title lang="original">국내 심부전 환자의 예후 인자 분석</article-title>
-        <article-title lang="english">Prognostic Factors in Korean Heart Failure Patients</article-title>
+        <article-categories>내과학</article-categories>
+        <article-regularity>Y</article-regularity>
+        <title-group>
+          <article-title lang="original"><![CDATA[국내 심부전 환자의 예후 인자 분석]]></article-title>
+          <article-title lang="foreign"><![CDATA[Prognostic Factors in Korean Heart Failure Patients]]></article-title>
+          <article-title lang="english"><![CDATA[Prognostic Factors in Korean Heart Failure Patients]]></article-title>
+        </title-group>
         <author-group>
           <author english="Joo-Hee Hwang" orc-id="0000-0002-1234-5678">황주희(전북대학교 의과대학)</author>
           <author english="Gil-Dong Hong">홍길동(서울대학교)</author>
         </author-group>
         <abstract-group>
-          <abstract lang="original">국내 심부전 환자를 대상으로 예후 인자를 분석하였다.</abstract>
-          <abstract lang="english">We analyzed prognostic factors in Korean patients.</abstract>
+          <abstract lang="original"><![CDATA[국내 심부전 환자를 대상으로 예후 인자를 분석하였다.]]></abstract>
+          <abstract lang="english"><![CDATA[We analyzed prognostic factors in Korean patients.]]></abstract>
         </abstract-group>
-        <citation-count kci="4"/>
-        <doi>10.3904/kjm.2021.96.1.1</doi>
+        <fpage>1</fpage>
+        <lpage>9</lpage>
+        <doi>http://dx.doi.org/10.3904/kjm.2021.96.1.1</doi>
+        <uci></uci>
+        <citation-count kci="4" wos="0">4</citation-count>
         <url>https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART002712345</url>
+        <verified>Y</verified>
       </articleInfo>
     </record>
     <record>
@@ -60,11 +91,14 @@ SAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
         <pub-year>2019</pub-year>
       </journalInfo>
       <articleInfo article-id="ART002700001">
-        <article-title lang="original">타 기관 동명이인의 논문</article-title>
+        <title-group>
+          <article-title lang="original"><![CDATA[타 기관 동명이인의 논문]]></article-title>
+        </title-group>
         <author-group>
           <author english="Joo Hee Hwang">황주희(부산대학교)</author>
         </author-group>
-        <citation-count kci="1"/>
+        <doi></doi>
+        <citation-count kci="1" wos="0">1</citation-count>
       </articleInfo>
     </record>
     <record>
@@ -73,10 +107,28 @@ SAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
         <pub-year>2018</pub-year>
       </journalInfo>
       <articleInfo article-id="ART002700002">
-        <article-title lang="original">소속 표기가 없는 논문</article-title>
+        <title-group>
+          <article-title lang="original"><![CDATA[소속 표기가 없는 논문]]></article-title>
+        </title-group>
         <author-group>
           <author>황주희</author>
         </author-group>
+        <citation-count kci="0" wos="0">0</citation-count>
+      </articleInfo>
+    </record>
+    <record>
+      <journalInfo>
+        <journal-name>The Korean Journal of Physiology and Pharmacology</journal-name>
+        <pub-year>2016</pub-year>
+      </journalInfo>
+      <articleInfo article-id="ART002700003">
+        <title-group>
+          <article-title lang="original"><![CDATA[영문 소속으로만 오는 본인 논문]]></article-title>
+        </title-group>
+        <author-group>
+          <author english="Joo-Hee Hwang">황주희(Center for Clinical Pharmacology, Jeonbuk National University Hospital, Jeonju 54907, Korea)</author>
+        </author-group>
+        <citation-count kci="2" wos="1">2</citation-count>
       </articleInfo>
     </record>
   </outputData>
@@ -97,8 +149,12 @@ SAMPLE_XML_VARIANT = """<?xml version="1.0" encoding="UTF-8"?>
 </MetaData>
 """
 
+# 결과 0건 — 실측 그대로. total이 없고 resultMsg "No Data"만 온다 (HTTP 200)
 SAMPLE_XML_EMPTY = """<?xml version="1.0" encoding="UTF-8"?>
-<MetaData><outputData><result><total>0</total></result></outputData></MetaData>
+<MetaData>
+  <inputData><key>MASKED</key><apiCode>articleSearch</apiCode><author>가나다라마바사</author></inputData>
+  <outputData><result><resultMsg>No Data</resultMsg></result></outputData>
+</MetaData>
 """
 
 # record 하나에 논문이 여러 편 들어 있는 구조 — 첫 편만 남고 나머지가 사라지면 안 된다
@@ -115,8 +171,20 @@ SAMPLE_XML_ODD_CONTAINER = """<?xml version="1.0" encoding="UTF-8"?>
 <MetaData><item article-id="ART009"><article-title>제목</article-title></item></MetaData>
 """
 
-SAMPLE_XML_ERROR = """<?xml version="1.0" encoding="UTF-8"?>
-<MetaData><error>인증키가 유효하지 않습니다.</error></MetaData>
+# 인증키 오류 — 실측 그대로. HTTP 200 · error 태그 없음 · 0건과 같은 자리(resultMsg)에 온다
+SAMPLE_XML_BAD_KEY = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaData>
+  <inputData><key>0000000000</key><apiCode>articleSearch</apiCode><author>강경표</author></inputData>
+  <outputData><result><resultMsg>등록되지 않은 key 입니다.</resultMsg></result></outputData>
+</MetaData>
+"""
+
+# 잘못된 apiCode — 실측 그대로
+SAMPLE_XML_BAD_APICODE = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaData>
+  <inputData><key>MASKED</key><apiCode>noSuchCode</apiCode></inputData>
+  <outputData><result><resultMsg>등록되지 않은 서비스</resultMsg></result></outputData>
+</MetaData>
 """
 
 
@@ -131,19 +199,30 @@ class ParsingTest(unittest.TestCase):
         self.articles, self.total = parse(SAMPLE_XML)
 
     def test_기본_필드(self):
-        self.assertEqual(self.total, 3)
-        self.assertEqual(len(self.articles), 3)
+        self.assertEqual(self.total, 4)
+        self.assertEqual(len(self.articles), 4)
         paper = self.articles[0]
         self.assertEqual(paper["kciId"], "ART002712345")
-        self.assertEqual(paper["title"], "국내 심부전 환자의 예후 인자 분석")
+        self.assertEqual(paper["title"], "국내 심부전 환자의 예후 인자 분석")   # CDATA도 그대로 읽는다
         self.assertEqual(paper["titleEn"], "Prognostic Factors in Korean Heart Failure Patients")
-        self.assertEqual(paper["journal"], "대한내과학회지")   # 원어 우선
+        self.assertEqual(paper["journal"], "대한내과학회지")   # journal-name에는 lang 속성이 없다
         self.assertEqual(paper["year"], 2021)
-        self.assertEqual(paper["doi"], "10.3904/kjm.2021.96.1.1")
+        # doi는 실제로 전체 URL로 온다 — 원본 그대로 두고(원칙 4) 비교할 때만 정규화한다
+        self.assertEqual(paper["doi"], "http://dx.doi.org/10.3904/kjm.2021.96.1.1")
+        self.assertEqual(fetch_kci.normalize_doi(paper["doi"]), "10.3904/kjm.2021.96.1.1")
         self.assertIn("ART002712345", paper["url"])
-        self.assertEqual(paper["citedByCountKci"], 4)         # 속성(kci="4")
+        # citation-count는 kci·wos 속성과 텍스트를 함께 가진다 — kci 속성을 쓴다
+        self.assertEqual(paper["citedByCountKci"], 4)
         self.assertEqual(paper["abstract"], "국내 심부전 환자를 대상으로 예후 인자를 분석하였다.")
         self.assertEqual(paper["abstractEn"], "We analyzed prognostic factors in Korean patients.")
+
+    def test_lang_foreign은_영문_제목으로_쓰지_않는다(self):
+        """실측 lang 값은 original·foreign·english 세 가지 — english만 titleEn으로 쓴다."""
+        xml = SAMPLE_XML.replace('<article-title lang="english"><![CDATA[Prognostic Factors in '
+                                 'Korean Heart Failure Patients]]></article-title>', "")
+        articles, _ = parse(xml)
+        self.assertIsNone(articles[0]["titleEn"])
+        self.assertEqual(articles[0]["title"], "국내 심부전 환자의 예후 인자 분석")
 
     def test_저자_소속_영문명_orcid(self):
         authors = self.articles[0]["authors"]
@@ -156,12 +235,22 @@ class ParsingTest(unittest.TestCase):
         self.assertIsNone(authors[1]["orcid"])               # 없는 값은 null (원칙 2)
 
     def test_없는_값은_null(self):
-        """피인용수·초록·DOI가 없으면 0이나 빈 문자열이 아니라 None이어야 한다 (원칙 2)."""
+        """초록·DOI가 없으면 빈 문자열이 아니라 None이어야 한다 (원칙 2).
+
+        실측: doi는 빈 요소(<doi></doi>)로 오는 경우가 절반쯤 된다 (강경표 69편 중 34편).
+        """
         paper = self.articles[2]
-        self.assertIsNone(paper["citedByCountKci"])
         self.assertIsNone(paper["abstract"])
-        self.assertIsNone(paper["doi"])
+        self.assertIsNone(paper["doi"])          # <doi></doi> 빈 요소
         self.assertIsNone(paper["titleEn"])
+        self.assertEqual(paper["citedByCountKci"], 0)   # kci="0"은 '0회 인용'이라는 값이다
+
+    def test_피인용수_0과_미상은_다르다(self):
+        """kci="0"은 0회 인용(값 있음), citation-count 자체가 없으면 미상(None)."""
+        xml = SAMPLE_XML.replace('<citation-count kci="0" wos="0">0</citation-count>', "")
+        articles, _ = parse(xml)
+        self.assertEqual(articles[0]["citedByCountKci"], 4)
+        self.assertIsNone(articles[2]["citedByCountKci"])
 
     def test_표기가_달라도_파싱(self):
         """lang 속성 없음·요소형 피인용수·속성형 소속·record 없는 구조도 읽는다."""
@@ -177,11 +266,26 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(paper["authors"][0]["orcid"], "0000-0002-1234-5678")  # orcid 표기
 
     def test_결과_0건과_오류_구분(self):
-        articles, total = parse(SAMPLE_XML_EMPTY)
+        """실측 핵심: 오류도 HTTP 200 + resultMsg로 온다. 0건과 오류를 반드시 갈라야 한다.
+
+        이 구분이 깨지면 인증키가 틀렸을 때 182명 전원이 '논문 0건'으로 조용히 저장된다.
+        """
+        articles, total = parse(SAMPLE_XML_EMPTY)   # resultMsg "No Data"
         self.assertEqual(articles, [])
-        self.assertEqual(total, 0)
+        self.assertIsNone(total)                    # 0건 응답에는 total 자체가 없다
+
+        with self.assertRaises(fetch_kci.KciApiError) as ctx:
+            parse(SAMPLE_XML_BAD_KEY)
+        self.assertIn("등록되지 않은 key", str(ctx.exception))
+
         with self.assertRaises(fetch_kci.KciApiError):
-            parse(SAMPLE_XML_ERROR)
+            parse(SAMPLE_XML_BAD_APICODE)
+
+    def test_모르는_문구는_오류로_본다(self):
+        """알 수 없는 resultMsg는 0건이 아니라 오류로 취급한다 (조용히 삼키지 않는다)."""
+        xml = SAMPLE_XML_BAD_KEY.replace("등록되지 않은 key 입니다.", "일일 허용량 초과")
+        with self.assertRaises(fetch_kci.KciApiError):
+            parse(xml)
 
     def test_record에_논문이_여럿이어도_다_읽는다(self):
         """구조가 달라도 논문이 조용히 사라지지 않아야 한다 (학술지·연도는 빌 수 있음)."""
@@ -197,7 +301,9 @@ class ParsingTest(unittest.TestCase):
         """식별자 없는 논문은 계약 원칙 1에 따라 수집 대상이 아니다."""
         xml = SAMPLE_XML.replace(' article-id="ART002712345"', "")
         articles, _ = parse(xml)
-        self.assertEqual([a["kciId"] for a in articles], ["ART002700001", "ART002700002"])
+        self.assertEqual(
+            [a["kciId"] for a in articles], ["ART002700001", "ART002700002", "ART002700003"]
+        )
 
 
 class AffiliationTest(unittest.TestCase):
@@ -210,10 +316,13 @@ class AffiliationTest(unittest.TestCase):
         )
 
     def test_전북대_논문만_채택(self):
-        self.assertEqual([p["kciId"] for p in self.record["papers"]], ["ART002712345"])
+        # ① 한글 소속 · ④ 영문 소속 → 채택 / ② 타 기관 · ③ 소속 없음 → 제외
+        self.assertEqual(
+            [p["kciId"] for p in self.record["papers"]], ["ART002712345", "ART002700003"]
+        )
         self.assertEqual(
             self.record["stats"],
-            {"found": 3, "adopted": 1, "affiliationUnmatched": 2, "homonymUnassigned": 0},
+            {"found": 4, "adopted": 2, "affiliationUnmatched": 2, "homonymUnassigned": 0},
         )
 
     def test_레코드에_이름이_함께_있다(self):
@@ -242,13 +351,44 @@ class AffiliationTest(unittest.TestCase):
         record, _, _ = fetch_kci.build_professor_record("황주희", articles, None)
         self.assertEqual([p["kciId"] for p in record["papers"]], ["ART002799999"])
 
-    def test_영문_소속만_있으면_채택하지_않는다(self):
-        """현재 판정 키워드는 한글 '전북대' 하나 — 영문 표기는 걸러진다(확인 필요 지점)."""
-        xml = SAMPLE_XML.replace("황주희(전북대학교 의과대학)", "황주희(Jeonbuk National University)")
-        articles, _ = parse(xml)
-        record, unmatched, _ = fetch_kci.build_professor_record("황주희", articles, None)
-        self.assertEqual(record["papers"], [])
-        self.assertEqual(unmatched[0]["reason"], "타 기관")
+    def test_영문_소속도_채택한다(self):
+        """실측 반영 — 소속이 영문으로만 오는 논문이 실제로 있어 키워드를 확장했다.
+
+        확장 전에는 이런 논문이 '타 기관'으로 빠졌다 (곽용근 13편 중 1편, 강경표 22편 중 1편).
+        """
+        for affiliation in (
+            "Center for Clinical Pharmacology, Jeonbuk National University Hospital, Jeonju",
+            "Department of Internal Medicine, Chonbuk National University Medical School",
+            "Jeonbuk National Univ.",
+            "JEONBUK NATIONAL UNIVERSITY HOSPITAL",   # 대소문자 무관
+            # KCI가 긴 영문 소속을 150자에서 자른다 — "…Jeonbuk National Unive"로 끝나기도 한다
+            "Department of Radiology, Research Institute of Clinical Medicine of Jeonbuk "
+            "National UniversityBiomedical Research Institute of Jeonbuk National Unive",
+            # 잘림이 기관명 한가운데 떨어진 실측 사례 (신진용 ART002727150)
+            "Department of Plastic and Reconstructive Surgery, "
+            "Research Institute of Clinical Medicine of Jeonbuk",
+        ):
+            self.assertTrue(fetch_kci.is_jbnu(affiliation), affiliation)
+
+    def test_한글_약칭도_채택한다(self):
+        """실측: 의학 논문은 '전북의대'로 줄여 쓰는 경우가 많다 (제외 목록에서 45편 발견)."""
+        for affiliation in ("전북의대", "전북의대 내과학", "전북의대 산부인과",
+                            "전북의학전문대학원", "전북대학교병원", "전북대학병원"):
+            self.assertTrue(fetch_kci.is_jbnu(affiliation), affiliation)
+
+    def test_전북_지역_다른_기관은_채택하지_않는다(self):
+        """'jeonbuk'·'전북'만으로 판정하면 전북대와 무관한 기관까지 걸린다 — 그러면 안 된다.
+
+        아래는 모두 실제 응답의 제외 목록에 있던 표기다.
+        """
+        for affiliation in ("전주대학교", "전주예수병원", "전주교육대학교", "전북농업기술원",
+                            "전주기전대학", "전북보건환경연구원", "전주비전대학교", "전북테크노파크",
+                            "전북특별자치도 감염병관리지원단", "원광대학교", "원광의대",
+                            "Jeonbuk Institute of Automotive Technology",
+                            "Jeonbuk Internet Addiction Center,Korea",
+                            "Jeonbuk A.R.E.S. Medicinal Resources Research Institute",
+                            "Jeonju University"):
+            self.assertFalse(fetch_kci.is_jbnu(affiliation), affiliation)
 
 
 class AuthorInfoTest(unittest.TestCase):
@@ -308,7 +448,7 @@ class HomonymTest(unittest.TestCase):
         """papers가 빈 이유가 '결과 없음'인지 '배정 보류'인지 구분할 수 있어야 한다."""
         self.assertEqual(
             self.records["P-176"]["stats"],
-            {"found": 3, "adopted": 0, "affiliationUnmatched": 2, "homonymUnassigned": 1},
+            {"found": 4, "adopted": 0, "affiliationUnmatched": 2, "homonymUnassigned": 2},
         )
 
     def test_authorInfo도_비운다(self):
@@ -322,7 +462,7 @@ class HomonymTest(unittest.TestCase):
         self.assertEqual(self.entry["professor"], "황주희")
         self.assertEqual(self.entry["professorIds"], ["P-176", "P-177"])
         self.assertIn("자동 배정하지 않음", self.entry["reason"])
-        self.assertEqual(len(self.entry["candidates"]), 1)
+        self.assertEqual(len(self.entry["candidates"]), 2)   # 한글 소속 ① + 영문 소속 ④
         candidate = self.entry["candidates"][0]
         self.assertEqual(candidate["kciId"], "ART002712345")
         self.assertEqual(candidate["title"], "국내 심부전 환자의 예후 인자 분석")
@@ -342,6 +482,7 @@ class HomonymTest(unittest.TestCase):
     def test_채택_후보가_없으면_검수_기록도_없다(self):
         """전부 타 기관이면 배정할 것 자체가 없다 — 빈 검수 기록을 만들지 않는다."""
         xml = SAMPLE_XML.replace("황주희(전북대학교 의과대학)", "황주희(부산대학교)")
+        xml = re.sub(r"황주희\(Center for[^)]*\)", "황주희(부산대학교)", xml)
         articles, _ = parse(xml)
         records, _, _, entry = fetch_kci.build_homonym_records("황주희", ["P-176", "P-177"], articles, None)
         self.assertIsNone(entry)
@@ -510,6 +651,62 @@ class RetryTest(unittest.TestCase):
 
         self.assertEqual(fetch_kci.call_with_retry("테스트", broken), "ok")
         self.assertEqual(len(calls), 2)
+
+
+class SaveStateTest(unittest.TestCase):
+    """산출물 저장 — 윈도우에서 파일이 잠겨 있어도 실행이 죽지 않아야 한다.
+
+    실측(2026-08-18): 진행 상황을 보려고 산출물을 읽는 것만으로 os.replace가
+    PermissionError를 내며 40분짜리 실행이 중단됐다.
+    """
+
+    def setUp(self):
+        import tempfile
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.output = Path(self._tmpdir.name) / "kci_papers.json"
+
+        original_output = fetch_kci.OUTPUT_PATH
+        original_wait = fetch_kci.SAVE_RETRY_WAIT
+        fetch_kci.OUTPUT_PATH = self.output
+        fetch_kci.SAVE_RETRY_WAIT = 0            # 테스트가 실제로 기다리지 않게
+        self.addCleanup(lambda: setattr(fetch_kci, "OUTPUT_PATH", original_output))
+        self.addCleanup(lambda: setattr(fetch_kci, "SAVE_RETRY_WAIT", original_wait))
+
+        self.original_replace = fetch_kci.os.replace
+        self.addCleanup(lambda: setattr(fetch_kci.os, "replace", self.original_replace))
+
+    def _state(self):
+        return {"collectedAt": None, "professors": {"P-001": {"name": "강경표"}},
+                "review": {key: [] for key in fetch_kci.REVIEW_KEYS}}
+
+    def test_잠깐_잠겨_있으면_다시_시도해_저장한다(self):
+        calls = []
+
+        def flaky_replace(src, dst):
+            calls.append(1)
+            if len(calls) < 3:
+                raise PermissionError(5, "액세스가 거부되었습니다")
+            return self.original_replace(src, dst)
+
+        fetch_kci.os.replace = flaky_replace
+        fetch_kci.save_state(self._state())
+        self.assertEqual(len(calls), 3)
+        saved = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(saved["professors"]["P-001"]["name"], "강경표")
+
+    def test_계속_잠겨_있어도_예외로_죽지_않는다(self):
+        """수집한 결과를 버리지 않도록 임시 파일을 남기고 계속 진행한다."""
+        def always_locked(src, dst):
+            raise PermissionError(5, "액세스가 거부되었습니다")
+
+        fetch_kci.os.replace = always_locked
+        fetch_kci.save_state(self._state())          # 예외가 올라오면 안 된다
+        tmp = self.output.with_suffix(".json.tmp")
+        self.assertTrue(tmp.exists())                 # 결과는 임시 파일에 남아 있다
+        self.assertEqual(
+            json.loads(tmp.read_text(encoding="utf-8"))["professors"]["P-001"]["name"], "강경표"
+        )
 
 
 class PagingTest(unittest.TestCase):
