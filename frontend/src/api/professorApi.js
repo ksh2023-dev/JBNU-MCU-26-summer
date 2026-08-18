@@ -1,7 +1,10 @@
 /**
  * professorApi.js — 교수 관련 API 함수 모음 (API ①·②·③ 백엔드 연결 완료)
  *
- * 「데이터 계약 문서 v6.2」의 2. API 엔드포인트와 1:1로 대응합니다.
+ * 「데이터 계약 문서 v6.4」의 2. API 엔드포인트와 1:1로 대응합니다.
+ * (v6.4 에서 엔드포인트·요청 필드 변경은 없고, 응답에서 papers 에 kciId 가 추가되고
+ *  labName 이 삭제되었습니다. 아래 주석의 v6.2 · v6.3 표기는 "그 규칙이 정해진 버전"을
+ *  가리키는 것이라 그대로 둡니다.)
  *
  *   getProfessors(query, options)   API ① 교수 검색·목록 조회
  *   getProfessorById(id)            API ② 교수 상세 조회
@@ -185,14 +188,21 @@ export async function getProfessors(query = '', options = {}) {
  *
  * 언제 쓰나: 카드의 [자세히 보기] 클릭
  *
- * 요청: GET /api/professors/{id} (계약 v6.2 API ②, 예: /api/professors/P-012)
+ * 요청: GET /api/professors/{id} (계약 v6.4 API ②, 예: /api/professors/P-012)
  *
  * 응답은 계약 1-2 교수 상세 객체입니다. 이 함수는 가공하지 않고 그대로 돌려줍니다.
- *   - labName · email · homepageUrl 은 값이 없으면 null 로 옵니다 (계약 원칙 2).
+ *   - email · homepageUrl 은 값이 없으면 null 로 옵니다 (계약 원칙 2).
  *     "정보 없음" 표시와 홈페이지 링크 숨김은 화면 쪽 몫입니다 (계약 4장).
+ *   - labName 은 v6.4 에서 삭제된 필드입니다. 더 이상 응답에 오지 않습니다.
  *   - keywords 는 상세에서 전체가 옵니다. 프론트가 개수를 자르지 않습니다.
- *   - papers 는 pmid 가 있는 논문만 오고, 없으면 빈 배열 [] 입니다 (계약 원칙 1).
- *     PubMed 주소는 pmid 로 화면이 직접 만듭니다 (계약 1-2).
+ *     값은 영문(MeSH) 이고 v6.4 는 화면 미표시로 정했지만, 노출 유지 여부를
+ *     팀에서 다시 논의 중이라 현재 화면은 기존대로 표시하고 있습니다.
+ *   - papers 는 pmid 또는 kciId 중 최소 하나를 가진 논문만 오고,
+ *     없으면 빈 배열 [] 입니다 (계약 v6.4 · 원칙 1).
+ *     없는 쪽 식별자는 null 로 옵니다. 두 값 모두 화면에 표시하지 않고
+ *     링크 생성에만 씁니다 — pmid 가 있으면 PubMed 를 우선하고,
+ *     pmid 가 null 이고 kciId 만 있으면 KCI 논문 페이지로 갑니다 (계약 3장).
+ *     ※ KCI 주소 형식은 아직 백엔드와 최종 확인 전입니다.
  *
  * @param {string} id 교수 id (예: 'P-001')
  * @returns {Promise<object>} 계약 1-2 교수 상세 객체

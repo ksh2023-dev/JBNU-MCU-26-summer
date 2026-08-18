@@ -4,10 +4,12 @@
   --bg: #fff;
   --border: #e5e4e7;
   --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
+  /* 서비스 강조색은 global.css 의 --brand(파랑) 한 곳에서 관리한다.
+     여기 있던 Vite 기본 템플릿의 보라색(#aa3bff)과, 쓰이지 않던
+     --accent-bg / --accent-border / --social-bg 는 걷어냈다.
+     --accent 는 남아 있을 수 있는 참조를 위한 하위 호환 별칭이다.
+     새 코드는 --brand 를 직접 쓸 것. */
+  --accent: var(--brand);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
@@ -37,16 +39,10 @@
     --bg: #16171d;
     --border: #2e303a;
     --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
+    /* --accent 는 var(--brand) 별칭이라 다크 값을 따로 둘 필요가 없다.
+       (--brand 자체가 global.css 의 다크 블록에서 바뀐다) */
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
   }
 }
 
