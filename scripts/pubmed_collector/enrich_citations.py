@@ -11,6 +11,7 @@
 """
 
 import json
+import os
 import time
 from datetime import date
 from pathlib import Path
@@ -41,14 +42,18 @@ OUTPUT_PATH = DATA_DIR / "professor_test_enriched.json"  # 2단계 산출물
 
 
 def read_openalex_api_key():
-    """루트 .env에서 OPENALEX_API_KEY 값을 읽는다 (외부 라이브러리 없이 몇 줄짜리 파서).
+    """OPENALEX_API_KEY를 읽는다 — 환경변수가 먼저, 없으면 루트 .env (외부 라이브러리 없이).
 
     API 키를 공개 저장소에 커밋하지 않기 위해 코드가 아니라 .env 파일에서 읽는다.
     (.env는 .gitignore에 등록되어 있고, 양식은 루트 .env.example 참고)
     3단계 build_all.py도 이 함수를 그대로 가져다 써서 같은 .env 값을 일관되게 쓴다.
+
+    환경변수를 먼저 보는 이유: scripts/run_all.py가 `--env-file`로 지정한 .env를 파싱해
+    하위 단계 프로세스의 환경변수로 넘긴다. 이렇게 해야 지정한 파일이 실제로 적용된다.
+    이 스크립트를 단독으로 실행할 때는 환경변수가 없으므로 지금까지처럼 루트 .env를 읽는다.
     """
-    api_key = ""
-    if ENV_PATH.exists():
+    api_key = os.environ.get("OPENALEX_API_KEY", "").strip()
+    if not api_key and ENV_PATH.exists():
         for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:

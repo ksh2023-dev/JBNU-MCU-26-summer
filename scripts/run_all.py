@@ -17,7 +17,8 @@
   0   전 단계 성공(또는 건너뜀)
   1   한 단계 이상 실패
   2   사전 점검 실패 (OPENALEX_API_KEY가 필요한 단계를 실행하는데 키가 없음 · 잘못된 옵션)
-  3   이미 실행 중 (락 파일 존재) — 이번 실행은 아무것도 하지 않았다
+  3   이미 실행 중 (락 파일 존재) — 이번 실행은 아무것도 하지 않았다.
+      강제 종료로 락만 남은 '스테일 락'은 자동 회수하므로, 이 코드는 정말 다른 실행이 도는 경우다
   130 사용자 중단(Ctrl+C) 또는 종료 신호
 """
 
@@ -47,32 +48,51 @@ EXIT_LOCKED = 3
 EXIT_INTERRUPTED = 130
 
 # 단계 정의 (작업지시서 1장의 표 그대로)
-#   default_off       : 기본 실행에서 제외 — 명단 크롤은 월 1회라 --include-roster로만 켠다
-#   skip_without_key  : 이 키가 .env에 없으면 자동 건너뜀 (KCI는 인증키가 있어야만 호출 가능)
-#   skip_without_file : 이 선행 산출물이 없으면 자동 건너뜀.
-#                       KCI 수집기는 7단계 결과인 professors.json을 수집 대상 명단으로 쓰는데
-#                       6단계가 7단계보다 앞서므로 늘 '직전 회차'의 결과를 본다. 산출물이 하나도
-#                       없는 새 서버의 첫 회차에는 대상 명단이 없어 돌 수 없다 — 오류가 아니라
-#                       건너뜀으로 두고, 7단계가 파일을 만들면 다음 회차부터 자동으로 실행된다.
-#   needs_openalex    : OPENALEX_API_KEY가 있어야 도는 단계. 이 단계가 이번 실행에 포함될 때만
-#                       키를 필수로 검사한다 (사전 점검 참고)
+#   default_off      : 기본 실행에서 제외 — 명단 크롤은 월 1회라 --include-roster로만 켠다
+#   skip_without_key : 이 키가 .env에 없으면 자동 건너뜀 (KCI는 인증키가 있어야만 호출 가능)
+#   requires_files   : 이 선행 산출물이 없으면 자동 건너뜀. 수집 스크립트들은 입력 파일이 없으면
+#                      그냥 죽는다(조립기는 트레이스백까지 뱉는다) — 아직 만들어지지 않은 것은
+#                      오류가 아니라 '아직 차례가 아닌 것'이므로 건너뜀으로 처리한다.
+#                      **이번 실행의 앞 단계가 만들 예정이면 있는 것으로 친다** (produces 참고).
+#   produces         : 이 단계가 만드는 산출물. 뒤 단계의 requires_files를 채워 주는 근거다.
+#                      6단계(KCI)가 7단계 산출물을 필요로 하는데 순서가 6 → 7이라, 같은 회차에는
+#                      채워지지 않고 늘 '직전 회차'의 professors.json을 보게 된다 — 의도된 동작.
+#   needs_openalex   : OPENALEX_API_KEY가 있어야 도는 단계. 이 단계가 이번 실행에 포함될 때만
+#                      키를 필수로 검사한다 (사전 점검 참고)
 Step = namedtuple(
     "Step",
-    "number name script default_off skip_without_key skip_without_file needs_openalex",
-    defaults=(False, None, None, False),
+    "number name script default_off skip_without_key requires_files produces needs_openalex",
+    defaults=(False, None, (), None, False),
 )
 
 STEPS = [
-    Step(1, "교수 명단 크롤", "scripts/roster_crawler/crawl_roster.py", default_off=True),
-    Step(2, "프로필 사진 URL", "scripts/profile_image_collector/fetch_image_urls.py"),
-    Step(3, "전문진료분야", "scripts/specialty_collector/fetch_specialties.py"),
+    Step(1, "교수 명단 크롤", "scripts/roster_crawler/crawl_roster.py",
+         default_off=True, produces="data/output/roster_crawled.json"),
+    Step(2, "프로필 사진 URL", "scripts/profile_image_collector/fetch_image_urls.py",
+         produces="data/output/profile_images.json"),
+    Step(3, "전문진료분야", "scripts/specialty_collector/fetch_specialties.py",
+         produces="data/output/specialties.json"),
     Step(4, "논문 수집(PubMed+OpenAlex)", "scripts/pubmed_collector/build_all.py",
-         needs_openalex=True),
+         produces="data/output/professors_papers.json", needs_openalex=True),
+    # 5단계는 확보한 PMID로 efetch만 다시 부른다 — OpenAlex를 호출하지 않아 키가 필요 없다
     Step(5, "MeSH·영문명·이메일 보강", "scripts/pubmed_collector/enrich_authors_mesh.py",
-         needs_openalex=True),
+         requires_files=("data/output/professors_papers.json",),
+         produces="data/output/professors_enriched_meta.json"),
     Step(6, "KCI 논문 수집", "scripts/kci_collector/fetch_kci.py",
-         skip_without_key="KCI_API_KEY", skip_without_file="data/output/professors.json"),
-    Step(7, "최종 조립", "scripts/assembler/build_professors.py"),
+         skip_without_key="KCI_API_KEY",
+         requires_files=("data/output/professors.json",),
+         produces="data/output/kci_papers.json"),
+    # 조립기는 아래 6종을 load_json으로 바로 연다 — 하나라도 없으면 트레이스백을 뱉고 죽는다.
+    # (data/input/professor_pages.json은 저장소에 커밋된 파일이라 조건에서 뺐다)
+    Step(7, "최종 조립", "scripts/assembler/build_professors.py",
+         requires_files=(
+             "data/output/roster_crawled.json",
+             "data/output/profile_images.json",
+             "data/output/specialties.json",
+             "data/output/professors_papers.json",
+             "data/output/professors_enriched_meta.json",
+         ),
+         produces="data/output/professors.json"),
 ]
 
 STEP_NUMBERS = [s.number for s in STEPS]
@@ -199,7 +219,11 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--env-file", metavar="PATH",
-        help="사전 점검에 쓸 .env 경로 (기본: 저장소 루트의 .env). 서버 구성·검증용",
+        help="쓸 .env 경로 (기본: 저장소 루트의 .env). 여기서 읽은 값은 하위 단계에도 전달된다",
+    )
+    parser.add_argument(
+        "--force-unlock", action="store_true",
+        help="남아 있는 락 파일을 강제로 회수하고 실행 (도는 실행이 없는 것이 확실할 때만)",
     )
     args = parser.parse_args(argv)
     if args.only and args.skip:
@@ -234,9 +258,9 @@ def read_env_values(env_path):
 def precheck(logger, env_path, env_values, plan):
     """실행 전 한 번 하는 점검. 통과하면 True, 중단해야 하면 False.
 
-    OPENALEX_API_KEY는 **이번 실행에 그 키가 필요한 단계(4·5)가 들어 있을 때만** 필수로 본다.
-    키가 없으면 그 단계는 반드시 실패하므로 수십 분을 버리기 전에 여기서 멈추지만,
-    키가 필요 없는 실행(예: --only 2)까지 막을 이유는 없다.
+    OPENALEX_API_KEY는 **이번 실행에 그 키가 필요한 단계(현재는 4단계)가 들어 있을 때만**
+    필수로 본다. 키가 없으면 그 단계는 반드시 실패하므로 수십 분을 버리기 전에 여기서 멈추지만,
+    키가 필요 없는 실행(예: --only 2·5)까지 막을 이유는 없다.
     """
     logger.write(f"사전 점검: {env_path}")
     blocked = [s for s, status, _ in plan if s.needs_openalex and status == ST_PLANNED]
@@ -268,11 +292,17 @@ def precheck(logger, env_path, env_values, plan):
 
 
 def build_plan(args, env_values):
-    """단계별로 '실행할지 / 왜 건너뛰는지'를 정한다. 반환: [(Step, 상태, 스크립트 경로)]
+    """단계별로 '실행할지 / 왜 건너뛰는지'를 정한다.
+
+    반환: (plan, missing_inputs)
+      plan           — [[Step, 상태, 스크립트 경로], ...] (실행 결과로 갱신된다)
+      missing_inputs — {단계 번호: [없는 선행 산출물 경로]} — 계획표에 사유를 적기 위한 것
 
     건너뛰는 이유를 계획표와 요약에 그대로 남겨, 안 돈 단계를 성공으로 착각하지 않게 한다.
     """
     plan = []
+    missing_inputs = {}
+    produced_earlier = set()   # 이번 실행에서 '앞 단계'가 만들어 줄 산출물
     for step in STEPS:
         script_path = ROOT / step.script
         status = ST_PLANNED
@@ -290,20 +320,29 @@ def build_plan(args, env_values):
         if status == ST_PLANNED and step.skip_without_key and not env_values.get(step.skip_without_key):
             status = ST_SKIP_NOKEY
 
-        # ③ 선행 산출물 — 앞 회차 결과가 있어야 도는 단계 (KCI ← professors.json)
-        if status == ST_PLANNED and step.skip_without_file:
-            if not (ROOT / step.skip_without_file).exists():
+        # ③ 선행 산출물 — 이미 있거나, 이번 실행의 앞 단계가 만들어 줄 예정이면 통과
+        if status == ST_PLANNED and step.requires_files:
+            absent = [
+                path for path in step.requires_files
+                if not (ROOT / path).exists() and path not in produced_earlier
+            ]
+            if absent:
                 status = ST_SKIP_NO_INPUT
+                missing_inputs[step.number] = absent
 
         # ④ 파일 존재 — 아직 병합되지 않은 스크립트는 오류가 아니라 건너뜀이다
         if status == ST_PLANNED and not script_path.exists():
             status = ST_SKIP_MISSING
 
+        # 이 단계가 실제로 돌면 그 산출물은 뒤 단계의 선행 조건을 채워 준다
+        if status == ST_PLANNED and step.produces:
+            produced_earlier.add(step.produces)
+
         plan.append([step, status, script_path])
-    return plan
+    return plan, missing_inputs
 
 
-def print_plan(logger, plan, args):
+def print_plan(logger, plan, args, missing_inputs):
     """계획표 출력 — 어떤 단계가 왜 도는지/안 도는지를 실행 전에 눈으로 확인한다."""
     name_width = max(_display_width(s.name) for s in STEPS)
     status_width = max(_display_width(st) for _, st, _ in plan)
@@ -316,7 +355,7 @@ def print_plan(logger, plan, args):
         if status == ST_SKIP_MISSING:
             note = "  <- 다른 브랜치 · 병합되면 자동 실행"
         elif status == ST_SKIP_NO_INPUT:
-            note = f"  <- {step.skip_without_file} 없음 · 7단계가 만들면 다음 회차부터 실행"
+            note = "  <- " + ", ".join(missing_inputs.get(step.number, [])) + " 없음"
         logger.write(
             f"  {_pad(str(step.number), 2)} {_pad(step.name, name_width)}  "
             f"{_pad(status, status_width)}  {step.script}{note}"
@@ -330,9 +369,11 @@ def print_plan(logger, plan, args):
         names = ", ".join(f"{s.number}({s.name})" for s, _, _ in missing)
         logger.write(f"[경고] 스크립트를 찾지 못해 건너뜁니다: {names}")
     for step, _, _ in no_input:
+        paths = ", ".join(missing_inputs.get(step.number, []))
+        logger.write(f"[안내] {step.number}단계({step.name}) 건너뜀 — 선행 산출물 없음: {paths}")
         logger.write(
-            f"[안내] {step.number}단계({step.name})는 선행 산출물 {step.skip_without_file}이 없어 "
-            f"건너뜁니다 — 7단계가 만들면 다음 회차부터 자동으로 실행됩니다."
+            "       이 파일을 만드는 단계가 이번 실행에 없거나 뒤 순서입니다. "
+            "만들어지면 다음 회차부터 자동으로 실행됩니다."
         )
     logger.write(f"실패 시 동작: {'다음 단계 계속 진행' if args.continue_on_error else '즉시 중단(기본)'}")
 
@@ -341,26 +382,144 @@ def print_plan(logger, plan, args):
 # 중복 실행 방지 (락 파일)
 # ---------------------------------------------------------------------------
 
-def acquire_lock(logger):
+def _parse_lock(text):
+    """락 파일 내용(`started=... / pid=...`)을 사전으로 바꾼다."""
+    info = {}
+    for line in (text or "").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key.strip():
+            info[key.strip()] = value.strip()
+    return info
+
+
+def _lock_age(started_text):
+    """락이 잡힌 뒤 지난 시간. 기록이 없거나 형식이 다르면 None."""
+    try:
+        started = datetime.strptime(started_text, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
+    return format_elapsed(max(0.0, (datetime.now() - started).total_seconds()))
+
+
+def _process_alive(pid):
+    """그 PID의 프로세스가 아직 살아 있는지 확인한다 (스테일 락 판단 근거).
+
+    주의: 윈도우의 os.kill(pid, 0)은 '확인'이 아니라 TerminateProcess로 그 프로세스를 죽인다.
+    그래서 윈도우에서는 ctypes로 핸들만 열어 종료 여부를 본다.
+    확인이 불가능하면 '살아 있다'로 본다 — 도는 실행을 잘못 회수하는 것보다 거부가 안전하다.
+    (PID는 재사용될 수 있으므로 이 판정은 완벽하지 않다. 그래서 --force-unlock을 함께 둔다.)
+    """
+    if not pid or pid <= 0:
+        return True
+    if os.name == "nt":
+        import ctypes   # 윈도우에서만 필요한 표준 라이브러리
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        ERROR_ACCESS_DENIED = 5
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # 핸들은 포인터 크기다 — 기본 int로 두면 64비트에서 잘린다
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # 없는 PID면 '매개변수 오류', 권한만 없으면 '접근 거부' — 후자는 살아 있는 것이다
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(pid, 0)          # POSIX: 신호 0은 '존재 확인'만 한다
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True              # 다른 사용자 소유지만 살아 있다
+    return True
+
+
+def _reclaim_lock(logger, force_unlock):
+    """이미 있는 락을 살펴 회수할지 정한다. 회수했으면 True, 거부하면 False.
+
+    거부든 회수든 콘솔과 로그 파일 양쪽에 시작 시각·PID·경과 시간을 남긴다 —
+    "왜 계속 거부되는지 알 수 없다"가 이 기능의 원래 불편이었다.
+    """
+    try:
+        raw = LOCK_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raw = ""
+        logger.write(f"[경고] 락 파일을 읽지 못했습니다: {exc}")
+
+    info = _parse_lock(raw)
+    started = info.get("started") or "(기록 없음)"
+    age = _lock_age(info.get("started")) or "(알 수 없음)"
+    try:
+        pid = int(info.get("pid", ""))
+    except ValueError:
+        pid = None
+
+    logger.write("")
+    logger.write(f"기존 락 발견: {LOCK_PATH}")
+    logger.write(f"       시작 시각 {started} · PID {info.get('pid') or '(기록 없음)'} · 경과 {age}")
+
+    if force_unlock:
+        logger.write("[경고] --force-unlock 지정 — 기존 락을 회수하고 진행합니다.")
+    elif pid is None:
+        # 락을 만든 직후 죽어 내용이 비었을 수도, 옛 형식일 수도 있다. 생사를 알 수 없으니
+        # 자동 회수하지 않는다 — 도는 실행을 덮치는 쪽이 훨씬 위험하다.
+        logger.write("[거부] 락에 PID 기록이 없어 실행 중인지 확인할 수 없습니다.")
+        logger.write("       도는 실행이 없는 것이 확실하면 --force-unlock 으로 회수하세요.")
+        return False
+    elif _process_alive(pid):
+        logger.write(f"[거부] 이미 실행 중입니다 — PID {pid} 프로세스가 아직 살아 있습니다.")
+        logger.write("       앞 실행이 끝나기를 기다리거나, 확실히 멈춘 실행이면 --force-unlock 을 쓰세요.")
+        return False
+    else:
+        logger.write(
+            f"[경고] 스테일 락 — PID {pid} 프로세스가 이미 없습니다(강제 종료·전원 차단 추정). "
+            "자동으로 회수하고 진행합니다."
+        )
+
+    try:
+        LOCK_PATH.unlink()
+    except FileNotFoundError:
+        pass   # 그 사이 앞 실행이 정상 종료하며 스스로 풀었다 — 그대로 진행
+    except OSError as exc:
+        logger.write(f"[거부] 락 파일을 지우지 못했습니다: {exc} — 권한을 확인하세요: {LOCK_PATH}")
+        return False
+    return True
+
+
+def acquire_lock(logger, force_unlock=False):
     """락 파일을 '없을 때만' 만든다(O_EXCL) — 이미 있으면 실행 중으로 보고 거부한다.
 
     이유: cron 주기보다 실행이 길어지면 두 프로세스가 같은 산출물을 동시에 쓸 수 있다.
+    다만 강제 종료로 락만 남은 경우(스테일 락)까지 거부하면 사람이 손댈 때까지 cron이
+    매 회차 조용히 실패한다 — PID가 이미 죽었으면 자동으로 회수한다.
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        logger.write("")
-        logger.write(f"[거부] 이미 실행 중입니다 — 락 파일: {LOCK_PATH}")
+    for attempt in (1, 2):     # 회수했으면 한 번만 다시 시도한다
         try:
-            logger.write("       " + LOCK_PATH.read_text(encoding="utf-8").strip().replace("\n", " / "))
-        except OSError:
-            pass
-        logger.write("       앞 실행이 비정상 종료해 락만 남았다면 이 파일을 지우고 다시 실행하세요.")
-        return False
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(f"started={datetime.now():%Y-%m-%d %H:%M:%S}\npid={os.getpid()}\n")
-    return True
+            fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if attempt == 2:
+                # 회수한 락을 그 찰나에 다른 실행이 다시 잡았다 — 양보한다
+                logger.write("[거부] 락을 회수한 직후 다른 실행이 락을 잡았습니다.")
+                return False
+            if not _reclaim_lock(logger, force_unlock):
+                return False
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"started={datetime.now():%Y-%m-%d %H:%M:%S}\npid={os.getpid()}\n")
+        return True
+    return False
 
 
 def release_lock(logger):
@@ -395,7 +554,7 @@ def install_signal_handlers():
 # 단계 실행
 # ---------------------------------------------------------------------------
 
-def run_step(logger, step, script_path):
+def run_step(logger, step, script_path, env_values):
     """단계 하나를 별도 프로세스로 실행한다. 반환: (종료 코드, 소요 초)"""
     started_at = datetime.now()
     started = time.monotonic()
@@ -405,6 +564,10 @@ def run_step(logger, step, script_path):
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"   # 하위 스크립트의 한글 출력이 파이프에서 깨지지 않게 고정
+    # --env-file(기본: 루트 .env)에서 읽은 값을 하위 단계에 물려준다. 수집 스크립트들은 저장소
+    # 루트 .env를 직접 읽으므로, 이렇게 넘기지 않으면 --env-file로 지정한 파일이 무시된다.
+    # 셸에 이미 같은 이름의 환경변수가 있어도 파일 값이 이긴다 — 지정한 파일이 실행의 기준이다.
+    env.update(env_values)
 
     # -u: 하위 스크립트 출력을 버퍼링 없이 받아 진행 상황을 실시간으로 흘려보낸다
     try:
@@ -456,7 +619,7 @@ def format_elapsed(seconds):
     return f"{secs}초"
 
 
-def execute(logger, plan, args):
+def execute(logger, plan, args, env_values):
     """계획대로 단계를 순서대로 실행한다. 반환: 실패한 단계가 있으면 True
 
     plan의 각 항목 상태를 실행 결과로 갱신하고, 소요 시간을 4번째 칸에 덧붙인다.
@@ -473,7 +636,7 @@ def execute(logger, plan, args):
             entry[1] = ST_ABORTED   # 앞 단계 실패로 아예 시작하지 않았다
             continue
 
-        code, elapsed = run_step(logger, step, script_path)
+        code, elapsed = run_step(logger, step, script_path, env_values)
         entry[3] = elapsed
         if code == 0:
             entry[1] = ST_OK
@@ -558,10 +721,10 @@ def main(argv=None):
         env_values = read_env_values(env_path)
 
         # 계획을 먼저 세운다 — 어떤 단계가 실제로 도는지 알아야 어떤 키가 필수인지 판단할 수 있다
-        plan = build_plan(args, env_values)
+        plan, missing_inputs = build_plan(args, env_values)
         if not precheck(logger, env_path, env_values, plan):
             return EXIT_PRECHECK
-        print_plan(logger, plan, args)
+        print_plan(logger, plan, args, missing_inputs)
 
         if args.dry_run:
             logger.write("")
@@ -569,12 +732,12 @@ def main(argv=None):
             return EXIT_OK
 
         install_signal_handlers()   # 락을 잡기 직전에 — 어떻게 끝나도 락이 남지 않게
-        if not acquire_lock(logger):
+        if not acquire_lock(logger, args.force_unlock):
             return EXIT_LOCKED
 
         started = time.monotonic()
         try:
-            failed = execute(logger, plan, args)
+            failed = execute(logger, plan, args, env_values)
             print_summary(logger, plan, time.monotonic() - started)
         finally:
             release_lock(logger)   # 예외·신호로 빠져나가도 락은 반드시 푼다
