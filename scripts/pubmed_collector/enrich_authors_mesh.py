@@ -21,8 +21,9 @@
      - JBNU 소속으로 2편 이상에서 관측
      - 후보가 2명 이상이면 1위가 2위보다 2편 이상 앞섬 (margin 규칙)
      - 인용문 등장 비율 1위 + 비율 0.6 이상 + 2위와 0.25 이상 차이
-  ⑥ email — (a) 인용문 교차검증을 통과했거나 (b) 로컬파트가 확정된 영문명과 정합할 때만 채택한다.
-     둘 다 아니면 null로 두고 주소를 review에 보존한다 (남의 주소로 메일이 나가는 사고 방지)
+  ⑥ email — (a) 인용문 교차검증을 통과했거나 (b) 로컬파트가 확정된 영문명을 특정할 때만 채택한다.
+     이름 조각(3자)만 맞거나 성만 맞는 주소는 채택하지 않는다 — 흔한 조각이라 교신저자·공용
+     주소가 걸린다. 채택하지 않은 주소는 emailHoldReason과 함께 review에 보존한다 (오발송 방지)
 
 왜 교차검증이 필요한가 (PR 리뷰):
   옛 논문은 PubMed에 제1저자 소속만 실린다. 그러면 본인이 중간저자인 교수는 후보에서 빠지고
@@ -433,7 +434,7 @@ def candidate_citation_ratio(key, cand, ratios):
 
 
 def email_matches_name(email, fore_name, last_name):
-    """이메일 로컬파트가 확정된 영문명과 정합하는지 본다. 맞으면 근거 문구, 아니면 None.
+    """이메일 로컬파트가 확정된 영문명과 정합하는지 본다. 맞으면 (근거 종류, 설명), 아니면 None.
 
     왜 필요한가 — 소속 문자열에 실린 주소는 그 저자 본인이 아니라 **교신저자** 것일 수 있다.
     인용문 교차검증이 안 되는 교수(149명 중 122명)의 주소를 전부 버리면 쓸 수 있는 이메일이
@@ -442,15 +443,20 @@ def email_matches_name(email, fore_name, last_name):
     로컬파트에서 숫자·구두점을 걷어낸 문자열과 영문명을 아래 규칙으로 대조한다.
     도메인은 보지 않는다 — 기관(jbnu.ac.kr)·개인(gmail.com) 모두 같은 규칙이다.
 
-    **성 단독 근거로는 채택하지 않는다** — 김·이·박은 명단 안에만 수십 명이라,
-    로컬파트에 성이 들어 있다는 사실만으로는 그 사람의 주소라고 볼 수 없다
-    ("oklee"는 이대우일 수도, 다른 이씨일 수도 있다). 아래 중 하나가 맞아야 채택한다:
-      ① 이니셜 조합 완전일치 — "sm"(SM)·"smoh"(SM+Oh)·"ohsm"·"sjs"(손지선: 성 S+이름 JS)
-         (완전일치만 인정한다. "kjsjdk"처럼 앞부분만 맞는 접두 일치는 받지 않는다)
-      ② 이름 전체 포함 — "sunjun"(Sun Jun)·"sori"(So Ri)
-      ③ 이름 조각(3자 이상) 포함 — "kyunim99"의 "kyu" (우연한 일치를 줄이려고 3자 이상만)
-      ④ 성 + 이니셜 (근거 두 겹) — "shkimgi"(kim + SH)·"entejlee"(lee + EJ)·"ihkimmd"(kim + IH)
-    ①~③은 이름 자체를 담고 있어 단독으로도 본인 주소로 본다. 성만 맞는 주소는 보류한다.
+    자동 채택 — 근거가 그 사람을 특정한다:
+      ① "initialsCombo"        이니셜 조합 완전일치 — "smoh"(SM+Oh)·"ohsm"·"sjs"(손지선: 성 S+이름 JS)
+                               (완전일치만 인정한다. "kjsjdk"처럼 앞부분만 맞는 접두 일치는 받지 않는다)
+      ② "fullGivenName"        이름 전체 포함 — "sunjun"(Sun Jun)·"sori"(So Ri)
+      ④ "lastNameAndInitials"  성 + 이니셜로 근거가 두 겹 — "shkimgi"(kim+SH)·"entejlee"(lee+EJ)
+
+    보류 — 근거가 약해 사람이 확인해야 한다:
+      ③ "nameFragment"  이름 조각(3자 이상)만 일치. **자동 채택하지 않는다** (PR #26 리뷰).
+                        min·sun·jin·hee 같은 조각은 한국 이름에 너무 흔해서, 교신저자나 부서
+                        공용 주소가 우연히 걸린다 — "admin@"이 김민호(Min-Ho Kim)로,
+                        "sunhee@"가 김선영(Sun-Young Kim)으로 잡히는 식이다.
+                        호출한 쪽이 emailHoldReason "nameFragmentOnly"로 기록만 남긴다.
+      성 단독 일치도 채택하지 않는다 — 김·이·박은 명단 안에만 수십 명이라
+      "oklee"는 이대우일 수도, 다른 이씨일 수도 있다.
     """
     local = re.sub(r"[^a-z]", "", (email or "").split("@")[0].lower())
     if not local:
@@ -463,7 +469,7 @@ def email_matches_name(email, fore_name, last_name):
 
     combos = {c for c in (initials, initials + last, last + initials, last[:1] + initials) if c}
     if local in combos:
-        return f"이니셜 조합 '{local}'"
+        return "initialsCombo", f"이니셜 조합 '{local}'"
 
     # 성이 설명하는 부분은 떼고 나머지에서 이름을 찾는다. 성과 같은 소리의 이름 조각에
     # 속지 않기 위해서다 — 정환정("Hwan-Jeong Jeong")의 "jayjeong"에서 'jeong'은
@@ -472,13 +478,13 @@ def email_matches_name(email, fore_name, last_name):
     rest = local.replace(last, "", 1) if has_last else local
 
     if concat and concat in rest:
-        return f"이름 '{concat}' 포함"
+        return "fullGivenName", f"이름 '{concat}' 포함"
+    # ④를 ③보다 먼저 본다 — 둘 다 걸리면 근거가 두 겹인 ④로 채택하는 편이 낫다
+    if has_last and len(initials) >= 2 and initials in rest:
+        return "lastNameAndInitials", f"성 '{last}' + 이니셜 '{initials}'"
     for token in tokens:
         if len(token) >= 3 and token in rest:
-            return f"이름 조각 '{token}' 포함"
-    # ④ 성 + 이니셜 — 성을 뺀 나머지에 이니셜이 남아 있어야 한다 (근거 두 겹)
-    if has_last and len(initials) >= 2 and initials in rest:
-        return f"성 '{last}' + 이니셜 '{initials}'"
+            return "nameFragment", f"이름 조각 '{token}'만 일치"
     return None
 
 
@@ -633,24 +639,29 @@ def decide(name, papers, details, citation_entries):
     if top["emails"]:
         email = top["emails"].most_common(1)[0][0]
         fore = top["foreNames"].most_common(1)[0][0] if top["foreNames"] else ""
-        local_basis = email_matches_name(email, fore, top_key[0])
+        match = email_matches_name(email, fore, top_key[0])
+        kind, local_basis = match if match else (None, None)
+        # 이름 조각(3자)만 맞는 건 자동 채택하지 않는다 — 흔한 조각이라 남의 주소가 걸린다 (PR #26)
         if cross_checked:
             result["email"] = email
             result["evidence"]["emailBasis"] = "인용문 교차검증"
-        elif local_basis:
+        elif kind and kind != "nameFragment":
             result["email"] = email
             result["evidence"]["emailBasis"] = f"로컬파트 정합 — {local_basis}"
         else:
-            # 보류 사유를 구분해 남긴다 (교차검증 불가 / 로컬파트 불일치)
+            # 보류 사유를 구분해 남긴다 — 이름 조각만 맞은 건과 아예 근거가 없는 건은 다르다
+            hold_reason = "nameFragmentOnly" if kind == "nameFragment" else "localPartMismatch"
+            detail = (f"{local_basis} — 자동 채택 제외"
+                      if kind == "nameFragment"
+                      else f"로컬파트 불일치({email.split('@')[0]} vs {result['nameEn']})")
             hold = []
             if not cross_checked:
                 hold.append(f"인용문 교차검증 불가(저자부 {citations_parsed}/{citations_total}건)")
-            hold.append(f"로컬파트 불일치({email.split('@')[0]} vs {result['nameEn']})")
+            hold.append(detail)
             entries.append({
                 "professor": name,
                 "reason": "이메일 보류 — " + " · ".join(hold),
-                "holdReasons": (["crossCheckUnavailable"] if not cross_checked else [])
-                               + ["localPartMismatch"],
+                "emailHoldReason": hold_reason,
                 "papers": len(papers),
                 "observedVariants": result["nameEnVariants"],
                 "citationsParsed": citations_parsed,
@@ -746,9 +757,11 @@ def print_summary(professors, review, details, requested_pmids, elapsed_seconds)
     print(f"  └ 확정 중 인용문 교차검증 통과: {len(cross_checked)}명"
           f" / 인용문 없어 교차검증 불가: {len(confirmed) - len(cross_checked)}명")
     basis = Counter(professors[n]["evidence"].get("emailBasis", "").split(" —")[0] for n in emails)
+    holds = Counter(e.get("emailHoldReason", "unknown") for e in held_emails)
     print(f"email 확보: {len(emails)}명"
-          f" ({' · '.join(f'{k} {v}명' for k, v in basis.most_common())})"
-          f" / 보류: {len(held_emails)}명")
+          f" ({' · '.join(f'{k} {v}명' for k, v in basis.most_common())})")
+    print(f"  └ 보류: {len(held_emails)}명"
+          f" ({' · '.join(f'{k} {v}건' for k, v in holds.most_common())})")
     print(f"MeSH 보강: 논문 {mesh_papers}편 (재조회 {len(details)}/{requested_pmids}편 중 MeSH 보유)")
 
     reasons = Counter(entry["reason"].split(" —")[0].split(" (")[0] for entry in review)

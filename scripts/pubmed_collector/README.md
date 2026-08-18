@@ -313,3 +313,81 @@ python scripts/pubmed_collector/build_all.py
 | 실행이 중간에 끊김 (통신 오류 등) | 같은 명령을 다시 실행 — 완료된 교수는 건너뛰고 이어서 진행(재개) |
 | `notFound`가 많아 보임 | 한글 서적·국내 학술지 인용문은 PubMed에 없는 것이 정상 → 검수 목록으로만 활용 |
 | 진행 로그의 한글이 깨져 보임 | 콘솔 인코딩 문제 → PowerShell에서 `chcp 65001` 실행 후 재시도 (수집 결과 파일은 항상 UTF-8로 정상 저장됨) |
+
+---
+
+# C단계: MeSH·교수 영문명·이메일 보강 (`enrich_authors_mesh.py`)
+
+3단계가 이미 확보한 PMID로 **efetch만 다시 호출**해(재수집 없음) 논문의 MeSH와 저자 상세를 읽고,
+교수별 영문명(`nameEn`)·키워드 후보·이메일을 `data/output/professors_enriched_meta.json`에 채웁니다.
+878편이 efetch 5묶음이라 전체 실행도 10초 남짓입니다.
+
+```powershell
+python scripts/pubmed_collector/enrich_authors_mesh.py
+```
+
+## 본인 저자를 가려내는 규칙
+
+교수의 논문에 실린 저자 중 **전북대(Jeonbuk/Chonbuk National University) 소속 + 한글 성의 로마자 표기와
+일치**하는 사람만 후보로 모은 뒤, 아래를 **전부** 만족할 때만 확정합니다. 하나라도 어긋나면 `nameEn`을
+`null`로 두고 후보 전원의 근거와 함께 `review`에 남깁니다 (지어내지 않는다 — 계약 원칙 2).
+
+- 전북대 소속으로 **2편 이상**에서 관측
+- 후보가 2명 이상이면 1위가 2위보다 **2편 이상** 앞섬 (margin 규칙)
+- **인용문 교차검증** — 교수 본인 프로필의 인용문(3단계 입력)에서 저자 "성 이니셜"을 뽑아 후보별 등장
+  비율을 계산하고, 1위 + 0.6 이상 + 2위와 0.25 이상 차이일 것. 프로필에 제목만 적혀 저자부를 읽을 수
+  없는 교수(대부분)는 교차검증 불가로 보고 위 두 조건만 적용합니다.
+
+## 이메일 채택·보류 규칙
+
+소속 문자열에 실린 주소는 **그 저자가 아니라 교신저자·부서 공용 주소일 수 있어서**, 근거가 그 사람을
+특정할 때만 채택합니다. 나머지는 `email: null`로 두고 주소를 `review`에 보존합니다 (오발송 방지).
+
+**채택**
+
+| 근거 | 예 |
+| --- | --- |
+| 인용문 교차검증 통과 | (위 판정에서 교차검증까지 통과한 교수) |
+| `initialsCombo` — 이니셜 조합 완전일치 | `smoh@`(Sang-Min Oh) · `sjs@`(손지선: 성 S + 이름 JS) |
+| `fullGivenName` — 이름 전체 포함 | `sunjun@`(Sun-Jun Kim) |
+| `lastNameAndInitials` — 성 + 이니셜 (근거 두 겹) | `shkimgi@`(kim + SH) · `entejlee@`(lee + EJ) |
+
+**보류** (`review`의 `emailHoldReason`으로 구분)
+
+| 사유 | 뜻 | 예 |
+| --- | --- | --- |
+| `nameFragmentOnly` | 이름 조각(3자 이상)만 일치 | `admin@`(Min-Ho Kim의 'min') · `sunhee@`(Sun-Young Kim의 'sun') |
+| `localPartMismatch` | 이름 근거가 없음 (성만 일치하거나 전혀 무관) | `oklee@`(Dae-Woo Lee) · `cardiolab@`(Jin-Ho Park) |
+
+- **이름 조각은 자동 채택하지 않습니다** — `min`·`sun`·`jin`·`hee` 같은 3글자 조각은 한국 이름에 너무
+  흔해서 남의 주소가 우연히 걸립니다. 사람이 확인해 확정할 항목입니다.
+- **성 단독 일치도 채택하지 않습니다** — 김·이·박은 명단 안에만 수십 명이라 `oklee@`가 이대우인지
+  다른 이씨인지 알 수 없습니다.
+- 접두 일치는 인정하지 않습니다 — `kjsjdk@`는 앞 세 글자가 김종승의 이니셜과 맞지만 보류합니다.
+- 보류된 주소를 사람이 확인했다면 `data/input/manual_overrides.json`에 `field: "email"`로 확정합니다.
+
+## 저장되는 JSON 모양 (C단계)
+
+```json
+{
+  "collectedAt": "2026-08-16",
+  "professors": {
+    "오상민": {
+      "nameEn": "Sang-Min Oh",
+      "nameEnVariants": ["Sang-Min Oh"],
+      "keywordsCandidate": ["COVID-19", "SARS-CoV-2", "..."],
+      "keywordsCandidateAll": ["Humans", "Adult", "..."],
+      "email": null,
+      "evidence": { "papersObserved": 3, "citationRatio": 1.0, "crossChecked": true, "...": "..." }
+    }
+  },
+  "review": [
+    { "professor": "...", "reason": "...", "candidates": [ { "candidate": "...", "papers": 2, "citationRatio": 1.0 } ] },
+    { "professor": "...", "reason": "이메일 보류 — ...", "emailHoldReason": "nameFragmentOnly", "withheldEmail": "..." }
+  ]
+}
+```
+
+- `keywordsCandidate`는 MeSH 검색 태그(Humans·Adult·Female 등 연구 주제가 아닌 항목)를 뺀 상위 10개이고,
+  빼기 전 목록은 `keywordsCandidateAll`에 함께 담습니다. **키워드 최종 확정·한글 번역은 이 단계 밖**입니다.
+- `review`는 오류 목록이 아니라 **사람이 확인할 목록**입니다. 확정한 값은 수동 검수 대장에 적습니다.
