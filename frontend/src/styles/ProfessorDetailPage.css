@@ -1,21 +1,34 @@
-/* 교수 상세 페이지 전용 스타일 */
+/**
+ * ProfessorDetailPage.css — 교수 상세 페이지 전용 스타일
+ *
+ * 색·형태·전환 값은 global.css 의 공통 토큰을 씁니다.
+ * 예전에는 이 파일에서 --blue 3종만 선언하고 나머지(글자·테두리)는 전역 --text /
+ * --text-h / --border 를 그대로 썼는데, 그 값들이 교수 카드·검색 결과와 다른 회색이라
+ * 같은 서비스인데도 화면을 옮기면 톤이 바뀌어 보였습니다.
+ *
+ * 이번에 맞춘 것
+ *   - 카드: 교수 카드와 같은 흰 면 + 12px radius + 2겹 그림자 (예전에는 배경·그림자 없음)
+ *   - 배지/키워드 칩: 교수 카드의 칩과 같은 6px radius + 옅은 파랑 (예전에는 999px 알약 + 베이지)
+ *   - 버튼: 교수 카드 버튼과 같은 규격(11px 16px · 14px/600 · 파랑 테두리)
+ *   - 흐린 글자: opacity 0.7/0.75/0.8 세 값 → --ink-muted 하나로
+ *   - 키보드 포커스 링과 전환 효과 추가 (예전에는 둘 다 없었음)
+ */
 
-/* 이 페이지에서 쓸 색을 여기 모아둔다 (다른 페이지에 영향을 주지 않도록 .detail-page 안에만) */
 .detail-page,
 .detail-message {
-  --blue: #2563eb;
-  --blue-soft: #eff6ff;
-  --blue-border: #bfdbfe;
-  --card-bg: transparent;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  /* 전역 :root 의 letter-spacing: 0.18px / font-size: 18px 를 물려받지 않도록 */
+  letter-spacing: normal;
+  color: var(--ink);
+  text-align: left; /* 전역 #root 의 text-align: center 를 물려받지 않도록 */
 }
 
-@media (prefers-color-scheme: dark) {
-  .detail-page,
-  .detail-message {
-    --blue: #60a5fa;
-    --blue-soft: rgba(96, 165, 250, 0.12);
-    --blue-border: rgba(96, 165, 250, 0.35);
-  }
+.detail-page *,
+.detail-page *::before,
+.detail-page *::after {
+  box-sizing: border-box;
 }
 
 .detail-page {
@@ -24,13 +37,19 @@
   gap: 20px;
 }
 
-/* 로딩 중 / 교수를 못 찾았을 때 */
+/* 로딩 중 / 교수를 못 찾았을 때.
+   검색 결과 페이지의 안내 카드(.search-page__message)와 같은 모양으로 둡니다. */
 .detail-message {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding: 60px 0;
+  padding: 72px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink-muted);
   text-align: center;
 }
 
@@ -43,72 +62,119 @@
   flex-wrap: wrap;
 }
 
+/* 전역 h1 이 56px 라서 이 페이지 제목 크기를 따로 지정합니다 */
 .detail-title {
-  font-size: 32px;
   margin: 0;
+  color: var(--ink-strong);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.4px;
 }
 
-/* ===== 공통 카드 상자 ===== */
+/* ===== 공통 카드 상자 =====
+   교수 카드(.professor-card)와 같은 면·테두리·radius·그림자를 써서
+   상세 화면의 상자들이 목록의 카드와 한 세트로 보이게 합니다. */
 .detail-card {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  background: var(--card-bg);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
+/* 18px 제목 단계 — 교수 카드 이름 / 검색 결과 수 / 필터 제목과 같은 규격 */
 .detail-section-title {
-  font-size: 18px;
-  color: var(--text-h);
   margin: 0 0 14px;
+  color: var(--ink-strong);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
 }
 
-/* 값이 없을 때 보여주는 문구는 흐리게 */
+/* 값이 없을 때 보여주는 문구 */
 .detail-empty {
-  color: var(--text);
-  opacity: 0.7;
+  color: var(--ink-muted);
   font-size: 15px;
 }
 
 /* ===== 버튼 / 링크 버튼 ===== */
+
+/* 교수 카드의 보조 버튼(.professor-card__button)과 같은 결 */
 .detail-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 11px 16px;
+  border: 1px solid var(--brand-line);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--brand);
   font: inherit;
-  font-size: 15px;
-  color: var(--text-h);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
   text-decoration: none;
-  cursor: pointer;
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    border-color var(--transition),
+    color var(--transition);
 }
 
 .detail-button:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
 }
 
-/* 찜하기 버튼 */
+.detail-button:focus-visible,
+.detail-favorite:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* 찜하기 버튼 — 기본 모양은 위 버튼과 같습니다 */
 .detail-favorite {
-  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 16px;
+  border: 1px solid var(--brand-line);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--brand);
   font: inherit;
-  font-size: 15px;
-  color: var(--blue);
-  background: transparent;
-  border: 1px solid var(--blue-border);
-  border-radius: 8px;
-  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    border-color var(--transition),
+    color var(--transition);
 }
 
-/* 이미 찜한 상태 */
+.detail-favorite:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+/* 이미 찜한 상태 — 파랑으로 채웁니다.
+   면과 글자를 --brand-solid / --on-brand 쌍으로 두는 이유는 global.css 주석 참고. */
 .detail-favorite.is-active {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: #fff;
+  background: var(--brand-solid);
+  border-color: var(--brand-solid);
+  color: var(--on-brand);
+}
+
+.detail-favorite.is-active:hover {
+  background: var(--brand-solid-hover);
+  border-color: var(--brand-solid-hover);
+  color: var(--on-brand);
 }
 
 /* ===== 프로필 카드 ===== */
@@ -121,7 +187,7 @@
 .detail-avatar {
   width: 140px;
   height: 170px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   object-fit: cover;
 }
 
@@ -130,10 +196,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--line);
+  color: var(--brand-strong);
+  background: var(--brand-soft);
   font-size: 56px;
-  font-weight: 600;
-  color: var(--blue);
-  background: var(--blue-soft);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+/* 사진이 실린 아바타는 어두운 화면에서 눈에 띄게 밝아 보이므로
+   교수 카드와 같은 정도로 아주 살짝 눌러 줍니다. */
+@media (prefers-color-scheme: dark) {
+  .detail-avatar:not(.detail-avatar--initial) {
+    filter: brightness(0.92);
+  }
 }
 
 .detail-profile__right {
@@ -149,25 +226,32 @@
 }
 
 .detail-name {
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--text-h);
   margin: 0;
+  color: var(--ink-strong);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.4px;
 }
 
-/* 교수 구분 배지 */
+/* 교수 구분 배지 — 교수 카드의 .professor-card__type 과 같은 규격 */
 .detail-badge {
-  padding: 4px 10px;
-  font-size: 13px;
-  color: var(--text);
-  background: var(--code-bg);
-  border-radius: 999px;
+  flex: none;
+  padding: 4px 9px;
+  border-radius: var(--radius-chip);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
+/* 소속 교실 / 진료과 — 교수 카드처럼 강조색이 아니라 본문색으로 둡니다 */
 .detail-department {
   margin: 8px 0 16px;
+  color: var(--ink);
   font-size: 17px;
-  color: var(--blue);
   font-weight: 500;
 }
 
@@ -181,17 +265,31 @@
 }
 
 .detail-info dt {
-  color: var(--text);
-  opacity: 0.75;
+  color: var(--ink-muted);
+  font-weight: 500;
 }
 
 .detail-info dd {
   margin: 0;
-  color: var(--text-h);
+  color: var(--ink);
 }
 
 .detail-info a {
-  color: var(--blue);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand);
+  transition: color var(--transition);
+}
+
+.detail-info a:hover {
+  color: var(--brand-strong);
+}
+
+.detail-info a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* ===== 연구 분야 + 연구 키워드 (2단) ===== */
@@ -199,6 +297,13 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
+}
+
+/* 연구 분야(specialties)가 비어 카드가 하나만 남으면 가로 전체를 쓰게 합니다.
+   그대로 두면 남은 카드가 왼쪽 절반에만 놓이고 오른쪽이 빈 공간으로 남습니다.
+   계약 v6.4 4장이 말하는 "데이터가 거의 비어 있는 교수"에서 실제로 생기는 상황입니다. */
+.detail-columns > :only-child {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 800px) {
@@ -210,28 +315,29 @@
 .detail-specialties {
   margin: 0;
   padding-left: 20px;
+  color: var(--ink);
   font-size: 15px;
   line-height: 190%;
-  color: var(--text-h);
 }
 
-/* 키워드 알약 태그 */
+/* 키워드 칩 — 교수 카드의 .professor-card__keyword 와 같은 규격 */
 .detail-keywords {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .detail-pill {
-  padding: 6px 12px;
-  font-size: 14px;
-  color: var(--blue);
-  background: var(--blue-soft);
-  border: 1px solid var(--blue-border);
-  border-radius: 999px;
+  padding: 4px 10px;
+  border-radius: var(--radius-chip);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 /* ===== 대표 논문 ===== */
@@ -246,7 +352,7 @@
   align-items: flex-start;
   gap: 14px;
   padding: 16px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }
 
 .detail-paper:first-child {
@@ -262,11 +368,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-chip);
+  background: var(--brand-solid);
+  color: var(--on-brand);
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
-  background: var(--blue);
-  border-radius: 6px;
 }
 
 .detail-paper__body {
@@ -275,13 +381,39 @@
 }
 
 .detail-paper__title {
+  margin: 0 0 6px;
+  color: var(--ink-strong);
   font-size: 16px;
-  font-weight: 500;
-  color: var(--text-h);
-  margin-bottom: 6px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .detail-paper__meta {
+  margin: 0;
+  color: var(--ink-muted);
   font-size: 14px;
-  opacity: 0.8;
+}
+
+/* 좁은 화면 */
+@media (max-width: 640px) {
+  .detail-title {
+    font-size: 26px;
+  }
+
+  .detail-card {
+    padding: 18px;
+  }
+
+  .detail-message {
+    padding: 56px 20px;
+  }
+}
+
+/* 움직임을 줄이도록 설정한 사용자에게는 전환 효과를 끕니다 */
+@media (prefers-reduced-motion: reduce) {
+  .detail-button,
+  .detail-favorite,
+  .detail-info a {
+    transition: none;
+  }
 }

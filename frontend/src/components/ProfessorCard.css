@@ -3,9 +3,10 @@
  *
  * 규칙
  *   - 이 파일의 선택자는 전부 .professor-card 안쪽만 건드립니다. (다른 화면에 영향 없음)
- *   - 색/여백 값은 .professor-card 안에서만 쓰는 변수로 선언합니다.
- *     전역 index.css 는 아직 Vite 기본 템플릿이라(보라색 강조색, #root 가운데 정렬 등)
- *     그대로 물려받으면 시안과 달라지기 때문에, 카드가 필요한 값을 직접 선언합니다.
+ *   - 색/형태 값은 .professor-card 안에서만 쓰는 지역 변수로 선언하되,
+ *     그 값은 global.css 의 공통 토큰을 가리킵니다.
+ *     (예전에는 여기에 색을 직접 적어 두었고 같은 값이 다른 4개 파일에도 복사되어
+ *      있었습니다. 이제 값은 global.css 한 곳에서 관리하고 여기서는 이름만 이어 줍니다)
  *   - featured / search 는 같은 HTML 구조를 쓰고, 배치만 CSS grid 영역으로 바꿉니다.
  *
  * ※ 이 카드는 메인·검색 결과뿐 아니라 찜 목록(FavoritesPage)에서도 그대로 쓰입니다.
@@ -14,30 +15,30 @@
 
 .professor-card {
   /* --- 색 --- */
-  --pc-primary: #2563eb;
-  --pc-primary-dark: #1d4ed8;
-  --pc-primary-soft: #eff6ff;
-  --pc-border: #e5e7eb;
-  --pc-border-blue: #bfdbfe;
-  --pc-surface: #ffffff;
-  --pc-avatar-bg: #eff6ff;
-  --pc-chip-more-bg: #f3f4f6;
-  --pc-text: #4b5563;
-  --pc-text-strong: #111827;
-  --pc-text-body: #374151;
-  --pc-text-muted: #6b7280;
-  --pc-focus: #2563eb;
+  --pc-primary: var(--brand);
+  --pc-primary-dark: var(--brand-strong);
+  --pc-primary-soft: var(--brand-soft);
+  --pc-border: var(--line);
+  --pc-border-blue: var(--brand-line);
+  --pc-surface: var(--surface);
+  --pc-avatar-bg: var(--brand-soft);
+  --pc-chip-more-bg: var(--chip-neutral);
+  --pc-text: var(--ink-soft);
+  --pc-text-strong: var(--ink-strong);
+  --pc-text-body: var(--ink);
+  --pc-text-muted: var(--ink-muted);
+  --pc-focus: var(--focus);
 
   /* --- 형태 --- */
-  --pc-radius-card: 12px;
-  --pc-radius-button: 8px;
-  --pc-radius-badge: 6px;
-  --pc-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --pc-shadow-hover: 0 4px 12px rgba(37, 99, 235, 0.08);
-  --pc-transition: 150ms ease;
+  --pc-radius-card: var(--radius-card);
+  --pc-radius-button: var(--radius-button);
+  --pc-radius-badge: var(--radius-chip);
+  --pc-shadow: var(--shadow);
+  --pc-shadow-hover: var(--shadow-hover);
+  --pc-transition: var(--transition);
 
-  /* 시안의 아바타는 정원이라 지름 하나로 관리합니다 */
+  /* 시안의 아바타는 정원이라 지름 하나로 관리합니다.
+     이 카드에서만 쓰는 값이라 공통 토큰으로 올리지 않습니다. */
   --pc-avatar-size: 96px;
 
   display: grid;
@@ -50,7 +51,7 @@
   box-shadow: var(--pc-shadow);
 
   color: var(--pc-text);
-  font-family: system-ui, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
   letter-spacing: normal;
@@ -75,31 +76,14 @@
 }
 
 /* 다크모드.
-   전환 방식은 전역 index.css 의 color-scheme: light dark 하나뿐이라
-   (토글 버튼·data-theme·JS 상태 없음) 여기서도 prefers-color-scheme 으로만 맞춥니다.
-
-   카드는 페이지 배경(#16171d)보다 한 단계 밝은 면(#1e2028)으로 띄워 두고,
-   테두리를 전역 --border 보다 살짝 밝게 잡아 경계를 남깁니다.
-   파랑 3종은 팀원 담당 페이지(FavoritesPage·ProfessorDetailPage)의 다크 값과
-   똑같이 맞춰, 같은 카드가 어느 화면에 놓여도 톤이 어긋나지 않게 합니다. */
+   대부분의 값은 global.css 의 토큰이 바꿔 주므로, 여기에는
+   "이 카드에서만 한 단계 더 조정하는" 예외 3가지만 남깁니다.
+   전환 방식은 여전히 prefers-color-scheme 하나뿐입니다. */
 @media (prefers-color-scheme: dark) {
   .professor-card {
-    --pc-primary: #60a5fa;
-    --pc-primary-dark: #93c5fd;
-    --pc-primary-soft: rgba(96, 165, 250, 0.12);
-    --pc-border: #30333d;
-    --pc-border-blue: rgba(96, 165, 250, 0.35);
-    --pc-surface: #1e2028;
+    /* 아바타 뒤 원은 공통 --brand-soft(0.12)보다 아주 조금 진하게 둡니다.
+       사진이 없는 카드에서 원의 자리가 보여야 하기 때문입니다. */
     --pc-avatar-bg: rgba(96, 165, 250, 0.14);
-    --pc-chip-more-bg: rgba(255, 255, 255, 0.07);
-    --pc-text: #d1d5db;
-    --pc-text-strong: #f3f4f6;
-    --pc-text-body: #d1d5db;
-    --pc-text-muted: #9ca3af;
-    --pc-focus: #93c5fd;
-    /* 어두운 배경에서 그림자가 과하게 뜨지 않도록 아주 옅게만 남깁니다 */
-    --pc-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --pc-shadow-hover: 0 4px 14px rgba(0, 0, 0, 0.4);
   }
 
   /* 어두운 면 위에서는 테두리 색 변화만으로는 hover 가 잘 보이지 않아
