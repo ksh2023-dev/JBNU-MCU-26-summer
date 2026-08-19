@@ -3,31 +3,35 @@
  *
  * 규칙 (ProfessorCard.css 와 동일)
  *   - 이 파일의 선택자는 전부 .search-bar 안쪽만 건드립니다.
- *   - 색/여백 값은 .search-bar 안에서만 쓰는 변수로 선언합니다.
- *     전역 index.css 가 아직 Vite 기본 템플릿이라 그대로 물려받으면 시안과 달라집니다.
+ *   - 색/형태 값은 .search-bar 안에서만 쓰는 지역 변수로 선언하되,
+ *     그 값은 global.css 의 공통 토큰을 가리킵니다.
  *   - 폭과 위치는 정하지 않습니다. 메인/검색 결과의 폭 차이는 부모가 정합니다.
  */
 
 .search-bar {
   /* --- 색 --- */
-  --sb-primary: #2563eb;
-  --sb-primary-dark: #1d4ed8;
-  --sb-primary-soft: #eff6ff;
-  --sb-border: #bfdbfe; /* 시안의 검색창은 회색이 아니라 옅은 파란 테두리 */
-  --sb-surface: #ffffff;
-  --sb-text-strong: #111827;
-  --sb-text-muted: #6b7280;
-  --sb-ring: rgba(37, 99, 235, 0.16);
-  /* [검색] 버튼처럼 파랑으로 꽉 채운 면 위에 올라가는 글자·테두리 색 */
-  --sb-on-primary: #ffffff;
+  /* [검색] 버튼은 파랑으로 꽉 채운 면이라 --brand 가 아니라
+     --brand-solid / --on-brand 쌍을 씁니다.
+     다크에서 --brand(#60a5fa) 위의 흰 글자는 대비가 2.54:1 밖에 안 나와
+     (WCAG AA 4.5:1 미달) 면을 진하게, 글자를 어둡게 뒤집는 값입니다.
+     그 판단은 이제 global.css 토큰이 대신 해 줍니다. */
+  --sb-primary: var(--brand-solid);
+  --sb-primary-dark: var(--brand-solid-hover);
+  --sb-primary-soft: var(--brand-soft);
+  --sb-border: var(--brand-line); /* 시안의 검색창은 회색이 아니라 옅은 파란 테두리 */
+  --sb-surface: var(--surface);
+  --sb-text-strong: var(--ink-strong);
+  --sb-text-muted: var(--ink-muted);
+  --sb-ring: var(--brand-ring);
+  --sb-on-primary: var(--on-brand);
 
   /* --- 형태 --- */
-  --sb-radius: 10px;
-  --sb-transition: 150ms ease;
+  --sb-radius: var(--radius-input);
+  --sb-transition: var(--transition);
 
   box-sizing: border-box;
   color: var(--sb-text-muted);
-  font-family: system-ui, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
   text-align: left; /* 전역 #root 의 text-align: center 를 물려받지 않도록 */
@@ -39,28 +43,14 @@
   box-sizing: border-box;
 }
 
-/* 다크모드.
-   전환 방식은 전역 index.css 의 color-scheme: light dark 하나뿐이라
-   (토글 버튼·data-theme·JS 상태 없음) 여기서도 prefers-color-scheme 으로만 맞춥니다.
+/* 다크모드 값은 global.css 의 토큰이 이미 바꿔 주므로 이 파일에 따로 둘 것이 없습니다.
+   전환 방식은 여전히 prefers-color-scheme 하나뿐입니다.
 
-   [검색] 버튼만 라이트 모드와 반대로 뒤집습니다.
+   참고: [검색] 버튼은 다크에서 라이트와 반대로 뒤집힙니다.
    어두운 화면에서 파랑을 그대로 두면 흰 글자와의 대비가 약해 잘 읽히지 않습니다.
    (#60a5fa 위의 흰 글자는 대비 2.5:1, #3b82f6 위도 3.7:1 — WCAG AA 4.5:1 미달)
-   그래서 버튼 면을 밝은 파랑으로 올리고 글자를 진하게 깔아
+   그래서 --brand-solid 면 위에 --on-brand(#0b1220) 글자를 깔아
    대비 5.1:1(hover 7.4:1)로 기준을 넘깁니다. 파랑 계열이라는 성격은 그대로입니다. */
-@media (prefers-color-scheme: dark) {
-  .search-bar {
-    --sb-primary: #3b82f6;
-    --sb-primary-dark: #60a5fa;
-    --sb-primary-soft: rgba(96, 165, 250, 0.12);
-    --sb-border: rgba(96, 165, 250, 0.35);
-    --sb-surface: #1e2028;
-    --sb-text-strong: #f3f4f6;
-    --sb-text-muted: #9ca3af;
-    --sb-ring: rgba(96, 165, 250, 0.25);
-    --sb-on-primary: #0b1220;
-  }
-}
 
 /* 입력창 + 버튼을 한 줄로 붙여 놓은 형태 */
 .search-bar__form {

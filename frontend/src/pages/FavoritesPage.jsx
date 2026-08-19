@@ -28,7 +28,7 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '../api/professorApi.js'
 import ProfessorCard from '../components/ProfessorCard.jsx'
-import Pagination from '../components/Pagenation.jsx'
+import Pagination from '../components/Pagination.jsx'
 import {
   buildContactDraft,
   toMailtoHref,
@@ -171,7 +171,8 @@ function FavoritesPage() {
           className="favorites-button"
           onClick={() => navigate('/')}
         >
-          교수 검색하러 가기 →
+          교수 검색하러 가기
+          <ArrowRightIcon />
         </button>
       </div>
     )
@@ -209,16 +210,48 @@ function FavoritesPage() {
         ))}
       </ul>
 
-      <Pagination
-        currentPage={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-      />
+      {/* Pagination 컴포넌트 내부는 건드리지 않고, 감싸는 자리(여백·구분선)만
+          검색 결과 페이지와 같은 값으로 잡습니다. */}
+      <div className="favorites-pagination">
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
+      </div>
 
       <p className="favorites-range">
         총 {total}명 중 {rangeStart}–{rangeEnd}명 표시
       </p>
     </div>
+  )
+}
+
+/**
+ * [교수 검색하러 가기] 옆 화살표.
+ *
+ * 예전에는 '→' 문자를 그대로 썼는데, 같은 자리에 있는 메인 화면의
+ * [전체 보기] 버튼은 인라인 SVG 를 쓰고 있어 두 버튼의 화살표 모양이 서로 달랐습니다.
+ * HomePage 의 ArrowIcon 과 같은 path·규격(16px, stroke-width 1.8)을 씁니다.
+ *
+ * 옆에 안내 문구가 글자로 함께 있으므로 장식용(aria-hidden)입니다.
+ */
+function ArrowRightIcon() {
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 12h14M12.5 6l6 6-6 6" />
+    </svg>
   )
 }
 
