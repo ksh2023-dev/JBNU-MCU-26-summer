@@ -4,9 +4,11 @@ v6.4 개정분 (2026-08-16 회의)
   - 대상 범위: 의대 공식 명단 기준 (치과 계열·병원 전용 교수 제외) → 0-2장
   - `labName` 필드 삭제 (수집 출처 없음) → EMIT_LABNAME
   - `papers[]`에 `kciId` 추가. 논문은 pmid 또는 kciId 중 하나가 반드시 있어야 한다 (원칙 1)
-  ※ 계약 문서(docs/data-contract-v6.4.md)는 별도 브랜치에 있고 이 브랜치에는 아직 없다.
-    데이터 계약 샘플(data/sample/professors.sample.json)도 아직 v6.3이라,
-    아래 두 개정분은 코드에서 명시적으로 반영한다.
+  ※ 계약 문서: docs/data-contract-v6.4.md (PR #30으로 main에 병합되어 이 브랜치에도 있다)
+    다만 계약 샘플(data/sample/professors.sample.json)은 아직 v6.3이라, 위 두 개정분은
+    샘플에서 읽은 칸 목록에 코드가 명시적으로 반영한다.
+    또 계약 v6.4에는 latestPaper의 스키마가 정의되어 있지 않다(내부 필드라는 언급뿐) —
+    아래 EMIT_LATEST_PAPER_KCI_ID 주석 참고.
 
 입력 (재료 6종)
   data/output/roster_crawled.json            의대 명단 (교수구분·교실·직위·전화·동명이인 메모·diff)
@@ -21,12 +23,12 @@ v6.4 개정분 (2026-08-16 회의)
   data/input/id_registry.json                id 대장 (한 번 부여한 id는 영원히 불변)
 
 출력 (data/output/ — .gitignore 대상, 커밋하지 않는다)
-  data/output/professors.json                   백엔드가 읽는 최종 파일. 샘플과 같은 칸만 담는다
+  data/output/professors.json                   백엔드가 읽는 최종 파일. 계약(v6.4) 칸만 담는다
   data/output/professors_extra.json             계약 밖 내부 데이터 (영문명·초록·근거·제외 명단·review)
   data/output/_cache_hospital_departments.json  병원 프로필에서 읽은 진료과 캐시 (재실행 시 재조회 생략)
 
 계약 0장 4원칙
-  1. pmid 없는 논문은 넣지 않는다
+  1. pmid 또는 kciId가 없는 논문은 넣지 않는다 (v6.4 확장)
   2. 값이 없으면 지어내지 말고 null (빈 문자열도 쓰지 않는다)
   3. 근거 없는 점수를 만들지 않는다 (matchScore는 백엔드 소관 — 이 파일에는 없다)
   4. 수집 기준일(collectedAt)을 담고, 이름·이메일·논문 값은 원본 그대로 둔다
@@ -61,6 +63,16 @@ PAPERS_LIMIT = 3                    # 대표 논문 수 (계약 1-2: 최신 1편
 # 참고: backend/app/schemas.py의 lab_name은 기본값 None을 가진 선택 필드라,
 # False로 두어 칸을 빼도 백엔드 적재는 실패하지 않는다 (대신 응답에 labName: null이 그대로 붙는다).
 EMIT_LABNAME = False
+
+# 최신 논문이 KCI 전용(pmid 없음·kciId만 있음)일 때 latestPaper를 kciId로 내보낼지.
+# 기본값 False인 이유 두 가지 — 어느 쪽도 조립기가 임의로 정할 수 없다.
+#  (1) 계약 v6.4에 latestPaper 스키마가 없다. 내부 필드라 응답에 나가지 않는다는 언급뿐이라
+#      kciId 칸을 조립기가 임의로 만들 근거가 없다.
+#  (2) 백엔드 schemas.py의 LatestPaper.pmid는 필수 문자열이다. pmid 없이 내보내면
+#      ProfessorRecord 검증이 실패해 professors.json 전체가 적재되지 않는다.
+# False인 동안에도 조용히 버리지 않는다 — review.latestPaperKciOnly에 전원 기록한다.
+# 계약에 latestPaper 스키마가 정의되고 백엔드가 pmid를 옵셔널로 바꾸면 True로 켠다.
+EMIT_LATEST_PAPER_KCI_ID = False
 
 SLEEP_SECONDS = 0.5                 # 서버 예절: 병원 페이지 호출 사이 대기
 TIMEOUT_SECONDS = 15
@@ -111,7 +123,8 @@ REVIEW_KEYS = (
     "crossAppointmentMerged",       # 두 교실에 걸친 사람을 한 명으로 합친 기록
     "homonymIsolated",              # 동명이인이라 이름 기반 자료를 물려주지 않은 기록
     "rosterMatchCollision",
-    "latestPaperDropped",           # 발행일이 없어 featured 후보에서 뺀 논문
+    "latestPaperDropped",           # 발행일·식별자가 없어 featured 후보에서 뺀 논문
+    "latestPaperKciOnly",           # 최신 논문이 KCI 전용이라 latestPaper를 내보내지 못한 교수
     "latestPaperMissingWithPapers",
     "manualOverridesApplied",
     "manualOverridesUnmatched",
@@ -420,15 +433,37 @@ def fill_from_sources(record, sources, review):
                         for p in kept[:PAPERS_LIMIT]]
     record["_extra"]["allPapers"] = list(paper_entry.get("allPapers") or [])
 
+    # latestPaper — 식별자 기준을 papers[]와 맞춘다 (v6.4 원칙 1: pmid 또는 kciId)
     latest = paper_entry.get("latestPaper")
-    if latest and (latest.get("pmid") or "").strip() and (latest.get("publishedAt") or "").strip():
-        record["latestPaper"] = {"pmid": latest["pmid"], "publishedAt": latest["publishedAt"]}
-    elif latest:
-        # 발행일이 없으면 API ③의 정렬 근거가 없다 → 후보에서 빠진다 (계약 2장 API ③ · 원칙 2)
-        review["latestPaperDropped"].append({
-            "name": name, "pmid": latest.get("pmid"),
-            "note": "latestPaper에 발행일(publishedAt)이 없어 featured 후보에서 제외",
-        })
+    if latest:
+        latest_pmid = (latest.get("pmid") or "").strip() or None
+        latest_kci_id = (latest.get("kciId") or "").strip() or None
+        published_at = (latest.get("publishedAt") or "").strip() or None
+        if not published_at:
+            # 발행일이 없으면 API ③의 정렬 근거가 없다 → 후보에서 빠진다 (계약 2장 API ③ · 원칙 2)
+            review["latestPaperDropped"].append({
+                "name": name, "pmid": latest_pmid, "kciId": latest_kci_id,
+                "note": "latestPaper에 발행일(publishedAt)이 없어 featured 후보에서 제외",
+            })
+        elif not latest_pmid and not latest_kci_id:
+            review["latestPaperDropped"].append({
+                "name": name, "pmid": None, "kciId": None,
+                "note": "latestPaper에 식별자(pmid·kciId)가 없어 featured 후보에서 제외 (원칙 1)",
+            })
+        elif latest_pmid:
+            # pmid가 있으면 그것만 담는다. 둘 다 있는 논문도 PubMed 우선 (계약 3장 링크 규칙)
+            record["latestPaper"] = {"pmid": latest_pmid, "publishedAt": published_at}
+        elif EMIT_LATEST_PAPER_KCI_ID:
+            record["latestPaper"] = {"pmid": None, "kciId": latest_kci_id,
+                                     "publishedAt": published_at}
+        else:
+            # KCI 전용 최신 논문 — 계약에 latestPaper 스키마가 없고 백엔드가 pmid를 요구해
+            # 지금은 내보내지 못한다. 조용히 빠지지 않도록 전원 기록한다 (상수 주석 참고)
+            review["latestPaperKciOnly"].append({
+                "name": name, "kciId": latest_kci_id, "publishedAt": published_at,
+                "note": "최신 논문이 KCI 전용이라 latestPaper를 내보내지 못했다 "
+                        "→ featured 후보에서 빠진다. EMIT_LATEST_PAPER_KCI_ID 주석 참고",
+            })
 
 
 def build_records(sources, review):
@@ -797,10 +832,12 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
         # latestPaper가 papers와 모순되지 않는지
         latest = record["latestPaper"]
         if latest:
-            if not latest.get("pmid") or not latest.get("publishedAt"):
-                problems.append(f"{name}: latestPaper의 pmid/publishedAt이 비어 있다")
-            elif latest["pmid"] not in {p["pmid"] for p in record["papers"]}:
-                problems.append(f"{name}: latestPaper({latest['pmid']})가 대표 논문 목록에 없다")
+            identifier = latest.get("pmid") or latest.get("kciId")
+            paper_ids = {p["pmid"] for p in record["papers"] if p.get("pmid")}                 | {p["kciId"] for p in record["papers"] if p.get("kciId")}
+            if not identifier or not latest.get("publishedAt"):
+                problems.append(f"{name}: latestPaper의 식별자(pmid·kciId)나 publishedAt이 비어 있다")
+            elif identifier not in paper_ids:
+                problems.append(f"{name}: latestPaper({identifier})가 대표 논문 목록에 없다")
         elif record["papers"]:
             review["latestPaperMissingWithPapers"].append(
                 {"id": record["id"], "name": name, "papers": len(record["papers"])})
@@ -897,6 +934,13 @@ def report(contract_records, review, excluded_dental, hospital_total,
 # ── 실행 ────────────────────────────────────────────────────────────
 
 def main():
+    # 콘솔이 cp949면 '—' 같은 문자에서 UnicodeEncodeError로 죽는다.
+    # 인코딩은 그대로 두고 표현 못 하는 글자만 대체해 실행이 멈추지 않게 한다.
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except Exception:
+        pass
+
     print("=" * 78)
     print("D단계 최종 조립기 — professors.json 생성")
     print("=" * 78)

@@ -59,6 +59,12 @@ python scripts/assembler/build_professors.py
 | 원칙 1 확장 (`pmid` **또는** `kciId` 필수) | 둘 다 없는 논문은 넣지 않고, 정합 검사에서 0건인지 확인한다 |
 | 대상 범위 확정 (0-2장) | 의대 공식 명단 기준 — 아래 "알아 둘 규칙" 참고 |
 
+**`latestPaper`(내부 필드)는 계약에 스키마가 없다.** v6.4는 "내부 선정용이며 응답에 포함되지 않는다"고만
+적고 칸을 정의하지 않는다. 그래서 조립기는 기존 모양(`pmid` + `publishedAt`)을 유지하고,
+`kciId` 칸을 임의로 만들지 않는다. 최신 논문이 KCI 전용이면 `EMIT_LATEST_PAPER_KCI_ID`가 켜져 있을 때만
+`{pmid: null, kciId, publishedAt}`으로 내보내고, 꺼져 있으면 `review.latestPaperKciOnly`에 기록한다
+(조용히 빠지지 않게 하기 위한 것 — featured 후보에서 제외된다).
+
 > ⚠️ **백엔드는 아직 v6.3 스키마다** (`backend/app/schemas.py`). 이 산출물로 기동은 되지만
 > 응답이 계약과 어긋난다 — 상세 응답에 `labName: null`이 그대로 붙고(`ProfessorDetail.lab_name`이 남아 있음),
 > `papers[].kciId`는 `Paper` 모델에 없어 응답에서 빠진다. 백엔드 담당자의 스키마 수정이 필요하다.
@@ -153,4 +159,5 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
 | `USE_DEPARTMENT_CACHE` | `True` | 조회 결과 캐시 사용 |
 | `HOSPITAL_ONLY_PROFESSOR_TYPE` | `"임상의학"` | 의대 명단에 없는 병원 교수의 교수 구분(추정) |
 | `PAPERS_LIMIT` | `3` | 대표 논문 수 |
+| `EMIT_LATEST_PAPER_KCI_ID` | `False` | 최신 논문이 KCI 전용일 때 `latestPaper`를 `kciId`로 내보낼지. 계약 v6.4에 **latestPaper 스키마가 없고** 백엔드 `LatestPaper.pmid`가 필수라 기본값 `False` — 대신 해당 교수를 `review.latestPaperKciOnly`에 남긴다 |
 | `EMIT_LABNAME` | `False` | `labName` 칸 출력 여부. v6.4에서 계약 필드 자체가 삭제돼 기본값 `False`. 백엔드가 v6.4 반영 전이라 임시로 필요하면 `True` (값은 항상 `null`) |
