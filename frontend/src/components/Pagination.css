@@ -1,0 +1,76 @@
+/**
+ * Pagination.css — 페이지 이동 버튼 (찜 목록·검색 결과 등 여러 페이지에서 재사용)
+ *
+ * 색·형태 값은 global.css 의 공통 토큰을 그대로 가져다 씁니다.
+ * (예전에는 --pg-blue 를 이 파일 안에서 직접 선언했고, 글자·테두리는 전역 --text-h /
+ *  --border 를 썼는데, 그 둘이 교수 카드·검색 결과와 미묘하게 다른 회색이었습니다)
+ */
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+}
+
+.pagination__button {
+  min-width: 38px;
+  height: 38px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--ink-strong);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-button);
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    border-color var(--transition),
+    color var(--transition);
+}
+
+/* 현재 페이지도 아니고 비활성도 아닐 때만 호버 강조.
+   교수 카드 버튼과 같은 결로 테두리·배경·글자를 함께 바꿉니다. */
+.pagination__button:hover:not(:disabled):not(.is-current) {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+/* 키보드로 도달했을 때만 표시합니다 */
+.pagination__button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* 현재 페이지 — 파랑으로 채웁니다.
+   면과 글자를 --brand-solid / --on-brand 쌍으로 두는 이유는 global.css 주석 참고.
+   (다크에서 --brand 위의 흰 글자는 대비 2.54:1 로 WCAG AA 에 못 미칩니다) */
+.pagination__button.is-current {
+  background: var(--brand-solid);
+  border-color: var(--brand-solid);
+  color: var(--on-brand);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* 첫/끝 페이지에서 비활성화된 화살표 */
+.pagination__button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 움직임을 줄이도록 설정한 사용자에게는 전환 효과를 끕니다 */
+@media (prefers-reduced-motion: reduce) {
+  .pagination__button {
+    transition: none;
+  }
+}

@@ -95,7 +95,8 @@ function ProfessorDetailPage() {
           className="detail-button"
           onClick={() => navigate(-1)}
         >
-          ← 목록으로 돌아가기
+          <ArrowLeftIcon />
+          목록으로 돌아가기
         </button>
       </div>
     )
@@ -111,7 +112,8 @@ function ProfessorDetailPage() {
           className="detail-button"
           onClick={() => navigate(-1)}
         >
-          ← 목록으로 돌아가기
+          <ArrowLeftIcon />
+          목록으로 돌아가기
         </button>
       </div>
     )
@@ -119,8 +121,10 @@ function ProfessorDetailPage() {
 
   /* ---------- 4) 정상 화면 ---------- */
 
-  // 논문 중 pmid 가 있는 것만 화면에 넣는다. (계약 원칙 1)
-  const papers = professor.papers.filter((paper) => paper.pmid)
+  // 논문은 pmid 또는 kciId 중 최소 하나를 가진다. (계약 v6.4 1-2)
+  // 둘 다 없는 논문은 응답에 오지 않지만, 만약 들어오면 화면에서 뺀다. (원칙 1)
+  // pmid 만 보고 거르면 kciId 만 있는 국내 논문이 통째로 사라진다.
+  const papers = professor.papers.filter((paper) => paper.pmid || paper.kciId)
 
   return (
     <div className="detail-page">
@@ -133,7 +137,8 @@ function ProfessorDetailPage() {
           // navigate(-1) = 브라우저 뒤로가기
           onClick={() => navigate(-1)}
         >
-          ← 목록으로 돌아가기
+          <ArrowLeftIcon />
+          목록으로 돌아가기
         </button>
       </div>
 
@@ -170,18 +175,17 @@ function ProfessorDetailPage() {
               }
               onClick={handleToggleFavorite}
             >
-              {isFavorite ? '♥ 찜 취소' : '♡ 찜하기'}
+              <HeartIcon filled={isFavorite} />
+              {isFavorite ? '찜 취소' : '찜하기'}
             </button>
           </div>
 
           {/* 소속 교실 / 진료과 */}
           <p className="detail-department">{professor.department}</p>
 
+          {/* 연구실(labName) 행은 계약 v6.4 에서 필드 자체가 삭제되어 없앴습니다.
+              값이 null 이라 "정보 없음"을 띄우던 것이 아니라, 이제 응답에 오지 않습니다. */}
           <dl className="detail-info">
-            <dt>연구실</dt>
-            {/* labName 이 null 이면 지어내지 않고 "정보 없음" */}
-            <dd>{professor.labName ?? NO_DATA}</dd>
-
             <dt>이메일</dt>
             <dd>
               {professor.email ? (
@@ -205,7 +209,8 @@ function ProfessorDetailPage() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    홈페이지 바로가기 ↗
+                    홈페이지 바로가기
+                    <ExternalLinkIcon />
                   </a>
                 </dd>
               </>
@@ -215,21 +220,27 @@ function ProfessorDetailPage() {
       </section>
 
       <div className="detail-columns">
-        {/* 연구 분야 - specialties 는 문자열 배열이라 이름만 나열한다 */}
-        <section className="detail-card">
-          <h3 className="detail-section-title">연구 분야</h3>
-          {professor.specialties.length > 0 ? (
+        {/*
+          연구 분야 — 계약 v6.4 4장: specialties 가 빈 배열이면 "해당 영역 표시 생략".
+          "정보 없음"을 띄우지 않고 카드 자체를 그리지 않습니다.
+          (한쪽만 남으면 CSS 의 :only-child 규칙이 가로 전체를 쓰게 합니다)
+        */}
+        {professor.specialties.length > 0 && (
+          <section className="detail-card">
+            <h3 className="detail-section-title">연구 분야</h3>
             <ul className="detail-specialties">
               {professor.specialties.map((specialty) => (
                 <li key={specialty}>{specialty}</li>
               ))}
             </ul>
-          ) : (
-            <p className="detail-empty">{NO_DATA}</p>
-          )}
-        </section>
+          </section>
+        )}
 
-        {/* 연구 키워드 - 상세 페이지에서는 전체를 보여준다 */}
+        {/*
+          연구 키워드 — 계약 v6.4 는 "화면 미표시"로 바뀌었지만,
+          노출 유지 여부를 팀에 다시 논의 요청한 상태라 기존 UI 를 그대로 둡니다.
+          (PR #26 리뷰 4번 — 팀 결정 후 반영)
+        */}
         <section className="detail-card">
           <h3 className="detail-section-title">연구 키워드</h3>
           {professor.keywords.length > 0 ? (
@@ -255,8 +266,9 @@ function ProfessorDetailPage() {
         ) : (
           <ol className="detail-papers">
             {papers.map((paper, index) => (
-              // pmid 는 논문마다 다르므로 목록의 key 로 쓰기 좋다
-              <li key={paper.pmid} className="detail-paper">
+              // 식별자는 논문마다 다르므로 목록의 key 로 쓰기 좋다.
+              // kciId 만 있는 국내 논문도 있으므로 두 값 중 있는 쪽을 쓴다.
+              <li key={paper.pmid ?? paper.kciId} className="detail-paper">
                 <span className="detail-paper__no">{index + 1}</span>
 
                 <div className="detail-paper__body">
@@ -266,21 +278,91 @@ function ProfessorDetailPage() {
                   </p>
                 </div>
 
-                {/* pmid 로 PubMed 주소를 직접 만들어 새 탭으로 연다 */}
-                <a
-                  className="detail-button"
-                  href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  PubMed 보기 ↗
-                </a>
+                {/*
+                  원문 링크 (계약 v6.4 3장)
+                    pmid 있음                → PubMed. 둘 다 있어도 PubMed 를 우선한다
+                    pmid 없고 kciId 만 있음  → KCI 논문 페이지
+
+                  KCI 주소 형식은 아직 백엔드와 최종 확인 전이라, 지금은 주소를
+                  지어내지 않고 버튼을 그리지 않는다. 형식이 확정되면 여기에
+                  kciId 분기를 한 줄 추가하면 된다. (원칙 2 — 없는 값을 만들지 않는다)
+                */}
+                {paper.pmid && (
+                  <a
+                    className="detail-button"
+                    href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    PubMed 보기
+                    <ExternalLinkIcon />
+                  </a>
+                )}
               </li>
             ))}
           </ol>
         )}
       </section>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------
+ * 아이콘 — 외부 아이콘 라이브러리 없이 인라인 SVG 로 그립니다.
+ *
+ * 예전에는 '←' '↗' '♡' '♥' 문자를 그대로 썼는데, 글꼴에 따라 크기·굵기·세로 위치가
+ * 제각각이라 다른 화면의 아이콘(HomePage / ProfessorCard 는 전부 인라인 SVG)과
+ * 톤이 맞지 않았습니다. 같은 규격(16px, stroke-width 1.8)으로 맞춥니다.
+ *
+ * 옆에 안내 문구가 글자로 함께 있으므로 전부 장식용(aria-hidden)입니다.
+ * ------------------------------------------------------------------ */
+
+/** 공통 SVG 틀 — 크기·선 두께를 한 곳에서 맞춘다 */
+function Icon({ children, fill = 'none' }) {
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill={fill}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+/** [목록으로 돌아가기] 앞 화살표 — 교수 카드의 오른쪽 화살표를 뒤집은 모양 */
+function ArrowLeftIcon() {
+  return (
+    <Icon>
+      <path d="M20 12H6M11.5 6l-6 6 6 6" />
+    </Icon>
+  )
+}
+
+/** 새 탭으로 여는 링크 표시 */
+function ExternalLinkIcon() {
+  return (
+    <Icon>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M18 14.5v4A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6h4" />
+    </Icon>
+  )
+}
+
+/** 찜 하트 — 교수 카드와 같은 path 를 쓰고, 찜한 상태에서만 안을 채운다 */
+function HeartIcon({ filled }) {
+  return (
+    <Icon fill={filled ? 'currentColor' : 'none'}>
+      <path d="M12 20.3 4.7 13a4.6 4.6 0 0 1 6.5-6.5l.8.8.8-.8A4.6 4.6 0 0 1 19.3 13Z" />
+    </Icon>
   )
 }
 
