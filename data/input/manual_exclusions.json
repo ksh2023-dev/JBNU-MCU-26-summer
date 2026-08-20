@@ -10,16 +10,18 @@
     "  reason     : 왜 오귀속인지. 근거 없는 항목은 build_all.py가 무시하고 경고한다",
     "  verifiedAt : 사람이 확인한 날짜",
     "",
-    "판단 보류로 '넣지 않은' 건 (본인 논문일 가능성이 높다):",
-    "  40704002 박진 - 옴 진료지침 Part 1. 제목이 인용문과 정확히 일치한다.",
-    "                  학술지만 Korean J Dermatology(2023) ↔ Ewha Medical Journal(2024)로 달라",
-    "                  같은 지침을 두 학술지에 중복 게재했을 가능성이 있다."
+    "제외하지 않기로 확정한 건:",
+    "  40704002 박진 - 옴 진료지침 Part 1. 2026-08-21 PubMed efetch로 저자 목록을 확인한 결과",
+    "                  'Park J (Jin), Department of Dermatology, Jeonbuk National University",
+    "                  Medical School, Jeonju, Korea'가 제1저자다. 본인 논문이 맞으므로 유지한다.",
+    "                  인용문이 밝힌 학술지(Korean Journal of Dermatology 2023)와 레코드",
+    "                  (Ewha Medical Journal 2024)가 달라 review.journalMismatch에는 계속 오른다."
   ],
   "updatedAt": "2026-08-21",
   "exclusions": {
     "40703982": {
       "professors": ["박진"],
-      "reason": "인용문은 옴 진료지침 Part 1(Epidemiology, Clinical Manifestations, and Diagnosis / Korean Journal of Dermatology 2023)인데, 매칭된 논문은 Part 2(Treatment / Ewha Medical Journal 2024)로 다른 편이다",
+      "reason": "인용문은 옴 진료지침 Part 1(Epidemiology, Clinical Manifestations, and Diagnosis / Korean Journal of Dermatology 2023)인데, 매칭된 논문은 Part 2(Treatment / Ewha Medical Journal 2024)로 다른 편이다. 2026-08-21 저자 확인: Part 2에도 박진 교수가 제1저자로 들어 있다 — 즉 본인 논문이기는 하나 인용문 목록에 없는 편이라, 인용문을 신원 보증 기준점으로 삼는 이 파이프라인의 설계에 따라 제외를 유지한다. 사람이 의도적으로 넣기로 하면 이 항목을 지우면 된다",
       "verifiedAt": "2026-08-21"
     },
     "9108896": {

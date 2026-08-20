@@ -421,7 +421,9 @@ class 수동_제외_대장(unittest.TestCase):
             )
 
     def test_보류건은_제외하지_않는다(self):
-        # 박진 40704002 — 옴 진료지침 Part 1. 제목이 인용문과 정확히 일치해 본인 논문일 수 있다
+        # 박진 40704002 — 옴 진료지침 Part 1. 2026-08-21 PubMed 저자 목록으로 확인했다:
+        # "Park J (Jin), Dept. of Dermatology, Jeonbuk National University Medical School"가
+        # 제1저자다. 본인 논문이므로 제외 대장에 들어가면 안 된다.
         self.assertIsNone(build_all.manual_exclusion_reason(self.table, "박진", "40704002"))
 
     def test_제외는_해당_교수에게만_적용된다(self):
