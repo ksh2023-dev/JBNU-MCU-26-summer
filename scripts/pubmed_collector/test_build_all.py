@@ -22,6 +22,7 @@ import unittest
 from pathlib import Path
 
 import build_all
+import citation_utils
 
 
 # ---------------------------------------------------------------------------
@@ -502,6 +503,60 @@ class 학술지_연도_대조(unittest.TestCase):
                                 ("류한욱", "38660095"), ("정환정", "36732943")]:
             papers = state["professors"].get(professor, {}).get("allPapers") or []
             self.assertIn(pmid, [p["pmid"] for p in papers], f"{professor} {pmid}가 사라졌다")
+
+
+class 저자_판별_공용모듈(unittest.TestCase):
+    """저자 표기 판별은 citation_utils.py 한 곳에 있고 두 스크립트가 그것을 쓴다.
+
+    2026-08-20에 build_all.py의 비공개 함수를 지웠다가 enrich_authors_mesh.py가
+    AttributeError로 죽었다. 같은 일이 다시 나지 않게 참조 구조를 테스트로 고정한다.
+    """
+
+    def test_build_all이_공용모듈을_쓴다(self):
+        self.assertIs(build_all._is_author_token, citation_utils.is_author_token)
+        self.assertIs(build_all._is_author_segment, citation_utils.is_author_segment)
+
+    def test_enrich가_build_all의_비공개함수를_직접_참조하지_않는다(self):
+        source = (Path(build_all.__file__).parent / "enrich_authors_mesh.py").read_text(encoding="utf-8")
+        self.assertNotIn("build_all._is_author", source)
+        self.assertIn("citation_utils.is_author_segment", source)
+
+    def test_기존_저자_표기는_그대로_인정한다(self):
+        for token in ("Oh SM", "Kim NJ", "van der Berg JT", "Lee C.S.", "et al", "and Ruhl S"):
+            self.assertTrue(citation_utils.is_author_token(token), token)
+
+    def test_기능어가_낀_제목은_저자로_보지_않는다(self):
+        # "Effects of vitamin D" — 4단어 이하에 마지막이 대문자 한 글자라 예전엔 저자로 잡혔다.
+        # 'of'는 이름에 쓰이지 않으므로 이제 걸러진다.
+        for title in ("Effects of vitamin D", "Role of Vitamin C", "Analysis of Sample B"):
+            self.assertFalse(citation_utils.is_author_token(title), title)
+
+    def test_기능어가_낀_제목의_학술지를_제대로_떼어낸다(self):
+        title, journal = build_all.parse_citation("Effects of vitamin D. Nutrients. 2021;13(5):1234.")
+        self.assertEqual(title, "Effects of vitamin D")
+        self.assertEqual(journal, "Nutrients")
+
+    def test_저자_한_명뿐이고_제목이_안_붙어_있으면_저자로_보지_않는다(self):
+        # 문맥 조건 — "Serum Vitamin D"는 전부 대문자로 시작해 토큰만 보면 저자처럼 보인다.
+        # 저자 목록은 보통 2명 이상이거나 마지막 저자가 제목과 붙어 있다.
+        self.assertEqual(citation_utils.author_run_end(["Serum Vitamin D"]), 0)
+        self.assertEqual(citation_utils.author_run_end(["Kim NJ"]), 1)          # '성 이니셜' 두 낱말
+        self.assertEqual(citation_utils.author_run_end(["Hwang JH", " Lee CS"]), 2)
+        # 마지막 저자가 제목과 붙어 있으면 한 명이어도 인정한다
+        self.assertEqual(
+            citation_utils.author_run_end(["Hwang JH", " Lee CS. Malaria-induced splenic infarction"]),
+            1,
+        )
+
+    def test_저자가_뒤에_와도_제목을_먹지_않는다(self):
+        title, _ = build_all.parse_citation(
+            "Decompression for Unerupted Primary Mandibular Second Molars: Case Reports. "
+            "Lee DW, Kim JG, Yang YM. J Clin Pediatr Dent. 2018;42(2):150-154."
+        )
+        self.assertEqual(
+            title,
+            "Decompression for Unerupted Primary Mandibular Second Molars: Case Reports",
+        )
 
 
 if __name__ == "__main__":

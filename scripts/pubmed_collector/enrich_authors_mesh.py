@@ -48,7 +48,8 @@ from pathlib import Path
 import requests
 
 # 기존 부품 재사용 (기존 파일은 수정하지 않는다 — 같은 폴더라 바로 import 가능)
-import build_all      # call_with_retry: 5xx·네트워크 예외를 5초→15초 간격으로 3회까지 재시도
+import build_all
+import citation_utils      # call_with_retry: 5xx·네트워크 예외를 5초→15초 간격으로 3회까지 재시도
 import fetch_one      # EFETCH_URL
 
 # ===== 실행 옵션 (실행 전 이 부분만 수정하면 됩니다) ============================
@@ -371,13 +372,13 @@ def merge_initials_only(candidates):
 def citation_author_keys(citation):
     """인용문 저자부에서 (성, 이니셜)을 뽑는다 — "Oh SM, Jeong H, …" → {("oh","SM"), …}.
 
-    저자부 판별은 3단계(build_all)의 규칙을 그대로 재사용한다. 제목·학술지 조각의
-    대문자 단어를 저자로 오인하지 않기 위해서다.
+    저자부 판별은 citation_utils의 규칙을 그대로 재사용한다 — 3단계(build_all)도 같은
+    모듈을 쓴다. 제목·학술지 조각의 대문자 단어를 저자로 오인하지 않기 위해서다.
     """
     text = re.sub(r"\s+", " ", citation or "").strip()
     keys = set()
     for segment in re.split(r"(?<=[.?!])\s+", text):
-        if not build_all._is_author_segment(segment):
+        if not citation_utils.is_author_segment(segment):
             continue
         # 성과 이니셜이 붙어 버린 원문 오타를 떼어 준다 — "YoonSJ" → "Yoon SJ".
         # (윤선중 교수 인용문 13건 중 5건이 실제로 이 모양이라 본인이 안 잡혔다)
@@ -387,7 +388,7 @@ def citation_author_keys(citation):
             token = token.strip().rstrip(".")
             if not token or token.lower() in {"et al", "and et al"}:
                 continue
-            if not build_all._is_author_token(token):
+            if not citation_utils.is_author_token(token):
                 continue
             words = token.split()
             if len(words) < 2:                      # 성만 있고 이니셜이 없으면 못 쓴다

@@ -42,6 +42,7 @@ from pathlib import Path
 import requests
 
 # 1·2단계 부품 재사용 (기존 파일은 수정하지 않는다 — 같은 폴더라 바로 import 가능)
+import citation_utils      # 저자 표기 판별 (C단계 enrich_authors_mesh와 공유)
 import fetch_one           # fetch_papers(pmids): efetch 상세 수집 + ESEARCH_URL
 import enrich_citations    # read_openalex_api_key / fetch_cited_by_counts / attach_citations / select_representative_papers
 
@@ -103,40 +104,14 @@ MANUAL_EXCLUSIONS_PATH = ROOT / "data" / "input" / "manual_exclusions.json"
 # parseFailed에 기록해 사람이 검수하게 한다 (계약 원칙 2: 지어내지 않는다).
 # ---------------------------------------------------------------------------
 
-# 저자 한 명 꼴: "Oh SM" / "van der Berg JT" — 마지막 단어가 대문자 이니셜(1~3자)
-_AUTHOR_LAST_RE = re.compile(r"[A-Z][A-Z.\-]{0,2}$")
-_AUTHOR_WORD_RE = re.compile(r"[A-Za-z][A-Za-z.'’\-]*$")
-
-# 이름 한 토막. 한글·유니코드 하이픈(Gonzalez‐Ortiz)까지 견디게 넓게 잡는다
-_NAME_WORD = r"[A-Z][\w'’‐‑\-]*"
-
-# 제목과 붙어 버린 저자 한 명
-#  - 이니셜 표기: "Choi EH.Hospital-Based …" / "… Case Reports. Lee DW"
-#  - 전체 이름  : "… Tae Sun Park. The Neuroprotective …"
-# 목록 마지막 저자에는 "and"/"&"가 앞에 붙기도 한다 ("…, and Ruhl S. (2013) 제목")
-_GLUED_AUTHOR = r"(?:and\s+|&\s*)?[A-Z][A-Za-z'’\-]*(?:\s+[A-Za-z'’\-]+)*\s+[A-Z][A-Z.\-]{0,2}"
-_GLUED_FULLNAME = _NAME_WORD + r"(?:\s+" + _NAME_WORD + r"){1,3}"
-
-# "Kim, Yeshin; Kang, Dong Woo; …; Suh, Jeewon." 처럼 세미콜론으로 나열한 저자 목록.
-# 마지막 저자 뒤의 마침표까지 통째로 떼어낸다.
-_SEMI_NAME = r"[A-Z](?:[\w'’‐‑\-]|\.(?=[A-Z]))*"
-_SEMI_AUTHOR_RUN = re.compile(
-    r"^(?:" + _SEMI_NAME + r",\s+" + _SEMI_NAME + r"(?:\s+" + _SEMI_NAME + r")*\.?\s*;\s*)+"
-    + _SEMI_NAME + r",\s+" + _SEMI_NAME + r"(?:\s+" + _SEMI_NAME + r")*\.\s+"
-)
-
-# 학위 표기 — 저자 목록 안에 섞여 들어온다 ("Jun Tak Choi, MD, Jeong-Hwan Seo, MD, PhD, …")
-_CREDENTIALS = {"md", "phd", "ms", "msc", "mph", "dds", "dmd", "rn", "bs", "mba", "dvm"}
-_CREDENTIAL_PREFIX_RE = re.compile(
-    r"^(?:" + "|".join(sorted(_CREDENTIALS, key=len, reverse=True)) + r")\b[\s.,]*", re.I
-)
-
-# "et al." 접두 — 저자 목록 끝의 "et al."이 제목에 붙어 남는다
-_ET_AL_PREFIX_RE = re.compile(r"^(?:and\s+)?et\s*\.?\s*al\.?[\s.,;]*", re.I)
-
-# 성과 이니셜이 붙어 버린 원문 오타를 떼어 본다 — "YoonSJ" → "Yoon SJ".
-# (판별할 때만 쓴다. 원문 자체는 바꾸지 않는다)
-_STUCK_INITIALS_RE = re.compile(r"\b([A-Z][a-z]{2,})([A-Z]{1,3})\b")
+# 저자 표기 판별은 citation_utils.py에 있다 — C단계 enrich_authors_mesh.py가 같은 규칙을
+# 써야 하기 때문이다. 여기서는 이름만 짧게 빌려 쓴다.
+_NAME_WORD = citation_utils.NAME_WORD
+_GLUED_AUTHOR = citation_utils.GLUED_AUTHOR
+_GLUED_FULLNAME = citation_utils.GLUED_FULLNAME
+_SEMI_AUTHOR_RUN = citation_utils.SEMI_AUTHOR_RUN
+_CREDENTIAL_PREFIX_RE = citation_utils.CREDENTIAL_PREFIX_RE
+_ET_AL_PREFIX_RE = citation_utils.ET_AL_PREFIX_RE
 
 # 인용문 앞머리의 표기 — "<주저자>", "<i>" 같은 꼬리표. 한글이 든 것과 html 태그만 뗀다
 # (제목 안에 나오는 "[18F]", "[2000]"을 건드리지 않기 위해서다)
@@ -188,80 +163,12 @@ _TITLE_MIN_WORDS = 4
 MIN_TITLE_CHARS = 10
 
 
-def _is_author_token(token):
-    """쉼표로 나눈 토큰 하나가 '성 + 이니셜' 저자 표기인지 판별한다.
-
-    ※ C단계 enrich_authors_mesh.py가 _is_author_segment()를 통해 이 판정을 그대로
-      가져다 쓴다. 파서 쪽 사정으로 이 함수를 느슨하게 만들면 그쪽 '본인 저자' 판정이
-      함께 흔들리므로, 파서 전용 관대한 판정은 아래 _looks_like_author()에 따로 둔다.
-    """
-    t = token.strip().rstrip(".")
-    if not t:
-        return False
-    if t.lower() in {"et al", "and et al"}:
-        return True
-    words = t.split()
-    if len(words) < 2 or len(words) > 4:           # "Kim NJ"~"van der Berg JT" 범위
-        return False
-    if not _AUTHOR_LAST_RE.fullmatch(words[-1]):   # 마지막 단어 = 대문자 이니셜
-        return False
-    return all(_AUTHOR_WORD_RE.fullmatch(w) for w in words[:-1])
-
-
-def _is_author_segment(segment):
-    """조각 하나가 저자 목록인지 판별 — 쉼표 토큰의 6할 이상이 저자 표기면 저자 조각.
-
-    역방향 파서 자체는 이 함수를 쓰지 않지만, C단계 enrich_authors_mesh.py가
-    "인용문 저자부에서 (성, 이니셜) 뽑기"에 그대로 가져다 쓴다 — 제목·학술지 조각의
-    대문자 단어를 저자로 오인하지 않으려면 판별 규칙이 한 곳에 있어야 하기 때문이다.
-    지우면 그쪽이 AttributeError로 죽는다.
-    """
-    tokens = [t for t in segment.split(",") if t.strip()]
-    if not tokens:
-        return False
-    hits = sum(1 for t in tokens if _is_author_token(t))
-    if len(tokens) == 1:
-        return hits == 1
-    return hits / len(tokens) >= 0.6
-
-
-def _is_fullname_token(token):
-    """'Heung Yong Jin' / 'Jun Tak Choi'처럼 이니셜 없이 전체 이름으로 쓴 저자 한 명.
-
-    2~4단어가 모두 대문자로 시작할 때만 인정한다. 논문 제목은 기능어(of/the/in)가
-    소문자라 이 조건에 잘 걸리지 않는다. 그래도 위험하므로 호출하는 쪽에서
-    '연속 2명 이상'일 때만 저자 목록으로 취급한다.
-    """
-    t = token.strip().rstrip(".")
-    if not t:
-        return False
-    if t.lower().replace(".", "") in _CREDENTIALS:   # "MD" "PhD" 같은 학위 표기
-        return True
-    words = t.split()
-    if not (2 <= len(words) <= 4):
-        return False
-    return all(re.fullmatch(_NAME_WORD, w) for w in words)
-
-
-def _is_name_fragment(token):
-    """'Choo'처럼 이니셜이 빠진 성 하나로 보이는 짧은 토막인지 — 1~2단어에 전부 대문자 시작."""
-    t = token.strip().rstrip(".")
-    words = t.split()
-    if not (1 <= len(words) <= 2):
-        return False
-    return all(re.fullmatch(_NAME_WORD, w) for w in words)
-
-
-def _looks_like_author(token):
-    """파서 전용 저자 판별 — _is_author_token에 원문 오타 보정을 더한 것.
-
-    "YoonSJ, Lee KB." 처럼 성과 이니셜이 붙어 버린 표기를 떼어서 한 번 더 본다
-    (윤선중 교수 인용문에 실제로 있는 모양이다). enrich_authors_mesh.py가 쓰는
-    _is_author_token 자체는 건드리지 않는다.
-    """
-    if _is_author_token(token):
-        return True
-    return _is_author_token(_STUCK_INITIALS_RE.sub(r"\1 \2", token.strip()))
+# 저자 판별 — 구현은 citation_utils.py에 있다 (C단계와 공유)
+_is_author_token = citation_utils.is_author_token
+_is_author_segment = citation_utils.is_author_segment
+_is_fullname_token = citation_utils.is_fullname_token
+_is_name_fragment = citation_utils.is_name_fragment
+_looks_like_author = citation_utils.looks_like_author
 
 
 def _clean_title(text):
@@ -328,13 +235,9 @@ def _strip_leading_authors(text):
 
     parts = stripped.split(",")
 
-    def run_from(start):
-        i = start
-        while i < len(parts) and _looks_like_author(parts[i]):
-            i += 1
-        return i
-
-    end = run_from(0)
+    # 문맥까지 보는 판정 — 저자로 보이는 토큰이 하나뿐이고 뒤에 제목이 붙어 있지도 않으면
+    # 저자로 보지 않는다 ("Serum Vitamin D" 같은 제목을 통째로 잃지 않기 위해서다)
+    end = citation_utils.author_run_end(parts, 0)
     if end == 0:
         # 전체 이름 표기 저자 목록 — 연속 2명 이상일 때만 저자로 본다
         k = 0
@@ -342,11 +245,11 @@ def _strip_leading_authors(text):
             k += 1
         if k >= 2:
             end = k
-        elif _is_name_fragment(parts[0]) and run_from(1) - 1 >= 2:
+        elif _is_name_fragment(parts[0]) and citation_utils.author_run_end(parts, 1) - 1 >= 2:
             # 첫 이름에 이니셜이 빠진 원문 오타("Choo, Ahn SH, Oh DS, …") — 한 칸만 봐준다.
             # 첫 토큰이 '성 하나'처럼 짧을 때만이다. 이 조건이 없으면
             # "제목…. Lee DW, Kim JG, Yang YM"의 제목까지 저자로 먹어 버린다.
-            end = run_from(1)
+            end = citation_utils.author_run_end(parts, 1)
     if end == 0:
         return text
 
@@ -369,6 +272,12 @@ def _strip_trailing_authors(text):
     j = len(parts)
     while j > 0 and _looks_like_author(parts[j - 1]):
         j -= 1
+    # 앞쪽과 같은 문맥 조건 — 뒤에 붙은 저자가 한 명뿐이고 그 앞이 제목과 마침표로
+    # 이어지지 않으면 저자로 보지 않는다
+    if len(parts) - j == 1 and len(parts[j].split()) > 2:
+        glued = re.search(r"\.\s*(" + _GLUED_AUTHOR + r")\s*$", ",".join(parts[:j]).strip())
+        if not (glued and _looks_like_author(glued.group(1))):
+            return text
     if j == len(parts):
         return text
     head = ",".join(parts[:j]).strip()
