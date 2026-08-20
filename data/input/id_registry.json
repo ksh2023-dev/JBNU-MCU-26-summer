@@ -1,0 +1,1800 @@
+{
+  "_comment": "교수 id 대장 — 한 번 부여한 id는 영원히 바꾸지 않는다 (프론트 찜이 id로 저장된다). 조립기가 자동으로 갱신하므로 손으로 고치지 않는다. 구조 설명은 data/input/README.md 참고.",
+  "updatedAt": "2026-08-19",
+  "nextNumber": 250,
+  "entries": [
+    {
+      "id": "P-001",
+      "name": "강경표",
+      "department": "내과학교실(신장) · 가정의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "내과학교실(신장)",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-002",
+      "name": "강상율",
+      "department": "외과학교실(유방,갑상선)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-003",
+      "name": "강진주",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-004",
+      "name": "강현구",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-005",
+      "name": "고명환",
+      "department": "재활의학교실 · 의공과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "재활의학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-006",
+      "name": "고성훈",
+      "department": "마취통증의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-007",
+      "name": "고은정",
+      "department": "신경외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-008",
+      "name": "고종현",
+      "department": "정형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-009",
+      "name": "곽용근",
+      "department": "약리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-010",
+      "name": "곽재용",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-011",
+      "name": "곽진",
+      "department": "예방의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-012",
+      "name": "곽효성",
+      "department": "영상의학교실 · 의공과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "영상의학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-013",
+      "name": "권근상",
+      "department": "예방의학교실 · 가정의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "예방의학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-014",
+      "name": "권삼현",
+      "department": "이비인후과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-015",
+      "name": "권영배",
+      "department": "약리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-016",
+      "name": "권태영",
+      "department": "정형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-017",
+      "name": "김경민",
+      "department": "병리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-018",
+      "name": "김경화",
+      "department": "심장혈관흉부외과학",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-019",
+      "name": "김고운",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-020",
+      "name": "김기범",
+      "department": "정형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-021",
+      "name": "김기욱",
+      "department": "재활의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-022",
+      "name": "김남수",
+      "department": "진단검사의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-023",
+      "name": "김다솔",
+      "department": "재활의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-024",
+      "name": "김대기",
+      "department": "면역학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-025",
+      "name": "김덕규",
+      "department": "마취통증의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-026",
+      "name": "김동찬",
+      "department": "마취통증의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-027",
+      "name": "김명기",
+      "department": "비뇨의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-028",
+      "name": "김민걸",
+      "department": "약리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-029",
+      "name": "김민선",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-030",
+      "name": "김보람",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-031",
+      "name": "김상연",
+      "department": "신경과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-032",
+      "name": "김상욱",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-033",
+      "name": "김상헌",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-034",
+      "name": "김선준",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-035",
+      "name": "김성원",
+      "department": "심장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-036",
+      "name": "김성훈",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-037",
+      "name": "김소리",
+      "department": "내과학교실(호흡기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-038",
+      "name": "김소은",
+      "department": "응급의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-039",
+      "name": "김수미",
+      "department": "생리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-040",
+      "name": "김순진",
+      "department": "심장혈관흉부외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-041",
+      "name": "김순철",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-042",
+      "name": "김연동",
+      "department": "마취통증의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-043",
+      "name": "김영은",
+      "department": "안과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-044",
+      "name": "김예슬",
+      "department": "마취통증의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-045",
+      "name": "김원",
+      "department": "내과학교실(신장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-046",
+      "name": "김이식",
+      "department": "내과학교실(심장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-047",
+      "name": "김인희",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-048",
+      "name": "김종석",
+      "department": "생화학분자생물학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-049",
+      "name": "김종승",
+      "department": "이비인후과학교실 · 의료정보학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "이비인후과학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-050",
+      "name": "김종헌",
+      "department": "심장혈관흉부외과학",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-051",
+      "name": "김종현",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-052",
+      "name": "김지용",
+      "department": "비뇨의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-053",
+      "name": "김지혜",
+      "department": "내분비대사내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-054",
+      "name": "김진규",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-055",
+      "name": "김찬영",
+      "department": "외과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-056",
+      "name": "김창훈",
+      "department": "심장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-057",
+      "name": "김태윤",
+      "department": "심장혈관흉부외과학",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-058",
+      "name": "김한솔",
+      "department": "소아청소년과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-059",
+      "name": "김한욱",
+      "department": "피부과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-060",
+      "name": "김현호",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-061",
+      "name": "김형완",
+      "department": "신장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-062",
+      "name": "김형태",
+      "department": "해부학교실 · 의학교육학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "해부학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-063",
+      "name": "김홍석",
+      "department": "응급의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-064",
+      "name": "김효선",
+      "department": "호흡기알레르기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-065",
+      "name": "김희권",
+      "department": "핵의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-066",
+      "name": "남경화",
+      "department": "피부과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-067",
+      "name": "남석현",
+      "department": "정신건강의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-068",
+      "name": "노상재",
+      "department": "법의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-069",
+      "name": "노시균",
+      "department": "성형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-070",
+      "name": "두아람",
+      "department": "마취통증의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-071",
+      "name": "류완희",
+      "department": "내과학교실(류마티스)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-072",
+      "name": "류한욱",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-073",
+      "name": "문설주",
+      "department": "약리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-074",
+      "name": "문영재",
+      "department": "생화학분자생물학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-075",
+      "name": "문우성",
+      "department": "병리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-076",
+      "name": "박경덕",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-077",
+      "name": "박선지",
+      "department": "생리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-078",
+      "name": "박성주",
+      "department": "내과학교실(호흡기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-079",
+      "name": "박성희",
+      "department": "재활의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-080",
+      "name": "박승용",
+      "department": "내과학교실(호흡기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-081",
+      "name": "박승철",
+      "department": "비뇨의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-082",
+      "name": "박에스더",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-083",
+      "name": "박우현",
+      "department": "생리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-084",
+      "name": "박은혜",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-085",
+      "name": "박정수",
+      "department": "신경외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-086",
+      "name": "박종일",
+      "department": "정신과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-087",
+      "name": "박준홍",
+      "department": "진단검사의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-088",
+      "name": "박지영",
+      "department": "인문사회의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-089",
+      "name": "박지현",
+      "department": "내과학교실(내분비)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-090",
+      "name": "박진",
+      "department": "피부과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-091",
+      "name": "박태원",
+      "department": "정신과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-092",
+      "name": "박태현",
+      "department": "소아청소년과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-093",
+      "name": "박혜리",
+      "department": "방사선종양학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-094",
+      "name": "박호성",
+      "department": "병리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-095",
+      "name": "방인혁",
+      "department": "생화학분자생물학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-096",
+      "name": "백현석",
+      "department": "소화기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-097",
+      "name": "서명하",
+      "department": "응급의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-098",
+      "name": "서승영",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-099",
+      "name": "서정환",
+      "department": "재활의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-100",
+      "name": "서종민",
+      "department": "마취통증의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-101",
+      "name": "소영수",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-102",
+      "name": "손명희",
+      "department": "핵의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-103",
+      "name": "손지선",
+      "department": "마취통증의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-104",
+      "name": "송은기",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-105",
+      "name": "송지수",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-106",
+      "name": "송창호",
+      "department": "해부학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-107",
+      "name": "신병수",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-108",
+      "name": "신유섭",
+      "department": "비뇨의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-109",
+      "name": "신준희",
+      "department": "소아청소년과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-110",
+      "name": "신진용",
+      "department": "성형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-111",
+      "name": "신현백",
+      "department": "외과학교실(소아외과학)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-112",
+      "name": "심가온",
+      "department": "심장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-113",
+      "name": "안민",
+      "department": "안과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-114",
+      "name": "안애리",
+      "department": "병리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-115",
+      "name": "안하림",
+      "department": "외과학교실(유방,갑상선)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-116",
+      "name": "양재도",
+      "department": "외과학교실(간담도 췌장 이식)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-117",
+      "name": "양종철",
+      "department": "정신과학교실 · 가정의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "정신과학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-118",
+      "name": "양혜진",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-119",
+      "name": "여인건",
+      "department": "소화기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-120",
+      "name": "여차동",
+      "department": "이비인후과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-121",
+      "name": "염지현",
+      "department": "신장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-122",
+      "name": "오상민",
+      "department": "내과학교실(감염)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-123",
+      "name": "오선영",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-124",
+      "name": "오영민",
+      "department": "신경외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-125",
+      "name": "오종석",
+      "department": "이비인후과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-126",
+      "name": "오태환",
+      "department": "응급의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-127",
+      "name": "왕성일",
+      "department": "정형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-128",
+      "name": "왕수정",
+      "department": "신경과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-129",
+      "name": "원유희",
+      "department": "재활의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-130",
+      "name": "유보람",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-131",
+      "name": "유연석",
+      "department": "이비인후과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-132",
+      "name": "유인천",
+      "department": "안과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-133",
+      "name": "유지혜",
+      "department": "소아청소년과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-134",
+      "name": "유효현",
+      "department": "의학교육학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-135",
+      "name": "유희철",
+      "department": "외과학교실(간담도 췌장 이식)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-136",
+      "name": "윤석권",
+      "department": "피부과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-137",
+      "name": "윤선중",
+      "department": "정형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-138",
+      "name": "윤성중",
+      "department": "의공과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-139",
+      "name": "윤재철",
+      "department": "응급의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-140",
+      "name": "윤현조",
+      "department": "외과학교실(유방,갑상선)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-141",
+      "name": "은종필",
+      "department": "신경외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-142",
+      "name": "이경석",
+      "department": "내과학교실(심장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-143",
+      "name": "이경애",
+      "department": "내과학교실(내분비)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-144",
+      "name": "이나리",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-145",
+      "name": "이내호",
+      "department": "성형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-146",
+      "name": "이동현",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-147",
+      "name": "이미린",
+      "department": "간담췌이식혈관외과(간담췌외과)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-148",
+      "name": "이민로",
+      "department": "외과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-149",
+      "name": "이민희",
+      "department": "호흡기알레르기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-150",
+      "name": "이병근",
+      "department": "응급의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-151",
+      "name": "이상록",
+      "department": "내과학교실(심장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-152",
+      "name": "이상훈",
+      "department": "신경외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-153",
+      "name": "이선영",
+      "department": "방사선종양학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-154",
+      "name": "이선화",
+      "department": "내과학교실(심장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-155",
+      "name": "이세진",
+      "department": "소화기외과(위장관외과)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-156",
+      "name": "이수진",
+      "department": "신장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-157",
+      "name": "이승엽",
+      "department": "진단검사의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-158",
+      "name": "이승옥",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-159",
+      "name": "이승철",
+      "department": "정형외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-160",
+      "name": "이승현",
+      "department": "소아청소년과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-161",
+      "name": "이식",
+      "department": "내과학교실(신장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-162",
+      "name": "이영근",
+      "department": "정형외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-163",
+      "name": "이영선",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-164",
+      "name": "이윤채",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-165",
+      "name": "이은정",
+      "department": "이비인후과학교실 · 가정의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "이비인후과학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-166",
+      "name": "이재현",
+      "department": "진단검사의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-167",
+      "name": "이정헌",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-168",
+      "name": "이정훈",
+      "department": "응급의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-169",
+      "name": "이종명",
+      "department": "신경외과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-170",
+      "name": "이주영",
+      "department": "심장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-171",
+      "name": "이주형",
+      "department": "예방의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-172",
+      "name": "이주환",
+      "department": "마취통증의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-173",
+      "name": "이준호",
+      "department": "마취통증의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-174",
+      "name": "이지하",
+      "department": "신장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-175",
+      "name": "이창섭",
+      "department": "내과학교실(감염)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-176",
+      "name": "이창훈",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-177",
+      "name": "이창훈",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-178",
+      "name": "이태은",
+      "department": "안과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-179",
+      "name": "이하송",
+      "department": "정형외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-180",
+      "name": "이행진",
+      "department": "안과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-181",
+      "name": "이호",
+      "department": "법의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-182",
+      "name": "이환진",
+      "department": "내과학교실(호흡기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-183",
+      "name": "이흥범",
+      "department": "내과학교실(호흡기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-184",
+      "name": "임석태",
+      "department": "핵의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-185",
+      "name": "임호영",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-186",
+      "name": "장규윤",
+      "department": "병리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-187",
+      "name": "장원",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-188",
+      "name": "전소연",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-189",
+      "name": "전수빈",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-190",
+      "name": "정경민",
+      "department": "미생물학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-191",
+      "name": "정래영",
+      "department": "내과학교실(심장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-192",
+      "name": "정명자",
+      "department": "병리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-193",
+      "name": "정연준",
+      "department": "외과학교실(소아외과학)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-194",
+      "name": "정영주",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-195",
+      "name": "정영철",
+      "department": "정신과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-196",
+      "name": "정우석",
+      "department": "소아청소년과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-197",
+      "name": "정유섭",
+      "department": "마취통증의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-198",
+      "name": "정윤규",
+      "department": "성형외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-199",
+      "name": "정재석",
+      "department": "호흡기알레르기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-200",
+      "name": "정재희",
+      "department": "정신건강의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-201",
+      "name": "정태오",
+      "department": "응급의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-202",
+      "name": "정형은",
+      "department": "유방갑상선외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-203",
+      "name": "정혜진",
+      "department": "소화기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-204",
+      "name": "정환정",
+      "department": "핵의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-205",
+      "name": "조남천",
+      "department": "안과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-206",
+      "name": "조대선",
+      "department": "소아청소년과학교실 · 가정의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "소아청소년과학교실",
+          "until": "2026-08-16"
+        }
+      ]
+    },
+    {
+      "id": "P-207",
+      "name": "조동휴",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-208",
+      "name": "조영리",
+      "department": "안과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-209",
+      "name": "조용곤",
+      "department": "진단검사의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-210",
+      "name": "조인영",
+      "department": "소화기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-211",
+      "name": "진공용",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-212",
+      "name": "진병철",
+      "department": "내과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-213",
+      "name": "진영호",
+      "department": "응급의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-214",
+      "name": "진흥용",
+      "department": "내과학교실(내분비)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-215",
+      "name": "차연우",
+      "department": "소화기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-216",
+      "name": "채금주",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-217",
+      "name": "채옥희",
+      "department": "해부학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-218",
+      "name": "채제건",
+      "department": "내과학교실(심장)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-219",
+      "name": "채주희",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-220",
+      "name": "채희숙",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-221",
+      "name": "천성근",
+      "department": "생리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-222",
+      "name": "최복희",
+      "department": "약리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-223",
+      "name": "최서윤",
+      "department": "영상의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-224",
+      "name": "최영훈",
+      "department": "호흡기알레르기내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-225",
+      "name": "최원구",
+      "department": "산부인과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-226",
+      "name": "최원일",
+      "department": "생리학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-227",
+      "name": "최윤정",
+      "department": "내과학교실(류마티스)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-228",
+      "name": "최윤호",
+      "department": "해부학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-229",
+      "name": "최은정",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-230",
+      "name": "최진경",
+      "department": "면역학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-231",
+      "name": "하기원",
+      "department": "외과학교실(소화기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-232",
+      "name": "한명관",
+      "department": "미생물학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-233",
+      "name": "한미란",
+      "department": "내과학교실(혈액·종양)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-234",
+      "name": "한세웅",
+      "department": "소화기외과(위장관외과)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-235",
+      "name": "한연희",
+      "department": "핵의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-236",
+      "name": "한영민",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-237",
+      "name": "한의혁",
+      "department": "해부학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-238",
+      "name": "한효진",
+      "department": "내과학교실(호흡기)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-239",
+      "name": "허준",
+      "department": "응급의학과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-240",
+      "name": "홍성출",
+      "department": "미생물학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-241",
+      "name": "홍용태",
+      "department": "이비인후과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-242",
+      "name": "홍지영",
+      "department": "예방의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-243",
+      "name": "홍현",
+      "department": "유방갑상선외과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-244",
+      "name": "황승배",
+      "department": "영상의학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-245",
+      "name": "황윤수",
+      "department": "신경과학교실",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-246",
+      "name": "황정환",
+      "department": "내과학교실(감염)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-247",
+      "name": "황주희",
+      "department": "내과학교실(감염)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-248",
+      "name": "황홍필",
+      "department": "외과학교실(간담도 췌장 이식)",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": []
+    },
+    {
+      "id": "P-249",
+      "name": "오신영",
+      "department": "심장내과",
+      "firstAssignedAt": "2026-08-16",
+      "departmentHistory": [
+        {
+          "department": "순환기내과",
+          "until": "2026-08-16"
+        }
+      ]
+    }
+  ]
+}
