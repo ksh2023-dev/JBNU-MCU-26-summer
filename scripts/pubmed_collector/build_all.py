@@ -1,7 +1,7 @@
 """PubMed 수집 3단계: 전체 교수(243명)의 인용문 목록으로 논문을 수집하는 파이프라인.
 
 흐름: 입력(교수별 인용문) 읽기
-      → 인용문마다 제목 추출 (규칙 기반 파싱)
+      → 인용문마다 제목·학술지명 추출 (뒤에서부터 서지 꼬리를 떼는 역방향 파싱)
       → PubMed에 제목으로 검색해 PMID 확보 (1차: "제목"[Title] 구문 → 2차: 일반 term)
       → PMID 중복 제거 → efetch 상세 수집 (1단계 부품 재사용)
       → OpenAlex 인용수 부착 (2단계 부품 재사용)
@@ -58,10 +58,13 @@ SLEEP_SECONDS = 0.4
 RETRY_ATTEMPTS = 3      # 같은 호출을 최대 3회까지 시도
 RETRY_WAITS = [5, 15]   # 시도 사이 대기(초): 1→2회차 5초, 2→3회차 15초
 
-# 검색 결과가 이 수를 넘으면 "어느 논문인지 지목 불가"로 보고 notFound 처리한다.
-# 제목 검색에서는 동명이인 대신 '흔한 문구가 여러 논문과 겹치는' 위험이 있는데,
-# 그때 첫 번째 결과를 집으면 남의 논문이 붙는다 — 불확실하면 넣지 않는다 (계약 원칙 2).
-AMBIGUOUS_HIT_LIMIT = 5
+# 제목 검색에서 받아 볼 후보 수. 예전에는 1위만 받고 "히트 수가 많으면 모호"로 버렸는데,
+# 정답이 2·3위에 있거나(7편) 1위가 정답인데 히트 수 때문에 버려진(10편) 손실이 있었다.
+# 후보를 늘려도 채택 기준(titles_match)은 그대로라 오귀속 위험은 늘지 않는다.
+SEARCH_RETMAX = 10
+
+# efetch를 한 번에 요청할 PMID 수 — 후보가 늘어 URL이 길어지므로 나눠 부른다
+EFETCH_BATCH = 100
 
 # 제목 후보 최소 길이(문자) — 이보다 짧은 조각은 제목으로 보지 않는다
 MIN_TITLE_CHARS = 10
@@ -70,34 +73,128 @@ MIN_TITLE_CHARS = 10
 ROOT = Path(__file__).resolve().parents[2]
 INPUT_PATH = ROOT / "data" / "input" / "professor_paper_lists.json"
 OUTPUT_PATH = ROOT / "data" / "output" / "professors_papers.json"
+# 사람이 검수해 확정한 오귀속 목록 (커밋 대상 — 산출물에서 지우면 재실행 때 되살아난다)
+MANUAL_EXCLUSIONS_PATH = ROOT / "data" / "input" / "manual_exclusions.json"
 
 
 # ---------------------------------------------------------------------------
-# 인용문 → 제목 추출 (규칙 기반 파싱)
+# 인용문 → 제목·학술지명 추출 (역방향 파싱)
 #
-# 인용문은 대체로 "저자들. 제목. 학술지. 연도;권(호):쪽" 구조다.
-# 마침표+공백으로 조각을 나눈 뒤, "저자 조각"과 "서지 꼬리 조각"을 걸러내고
-# 남은 조각에서 제목을 고른다. 완벽할 수 없으므로 실패는 지어내지 않고
-# parseFailed(추출 실패)·notFound(검색 실패)로 기록해 사람이 검수하게 한다.
+# Vancouver/NLM 인용 형식은 앞쪽(저자·제목)보다 뒤쪽이 규칙적이다:
+#     [저자들.] 제목. 학술지명. 연도 월 일;권(호):쪽.
+# 그래서 앞에서부터 첫 마침표까지를 제목으로 보면, 제목 안에 마침표나 숫자가
+# 있을 때(예: "… Records of 2000-2019.") 거기서 잘리고 그 다음 조각인 학술지명이
+# 제목 자리로 올라온다 — 실제로 "J Korean Med Sci"가 제목으로 뽑혀 엉뚱한 논문이
+# 붙는 오귀속이 발생했다.
+#
+# 그래서 뒤에서부터 떼어낸다:
+#   ⓪ 역순 형식("학술지명. 연도;권(호):쪽 (제목)")이면 괄호 안이 제목이다
+#   ① 서지 꼬리(doi·Epub·PMID → 연도·권·호·쪽)를 잘라내고
+#   ② 남은 "…제목. 학술지명"에서 뒤쪽 학술지명을 떼어내고
+#   ③ 제목 앞뒤에 붙은 저자 목록과 앞머리 연도를 떼어낸다
+#   ④ 남은 앞부분 전체가 제목이다 — 제목 안의 마침표·숫자에 영향받지 않는다
+#
+# 꼬리 시작 위치는 하나로 단정할 수 없다(제목 안의 연도, "2025, 제목, 학술지"처럼
+# 연도가 맨 앞에 오는 표기 등). 그래서 후보를 이른 것부터 차례로 잘라 보고,
+# 제목이 남는 첫 후보를 채택한다. 어느 후보로도 제목이 남지 않으면 아예 자르지 않고
+# 마지막으로 한 번 더 시도한다.
+#
+# 형식이 예상과 다르면 제목을 추측하지 않는다 — None을 돌려주고 호출한 쪽이
+# parseFailed에 기록해 사람이 검수하게 한다 (계약 원칙 2: 지어내지 않는다).
 # ---------------------------------------------------------------------------
 
 # 저자 한 명 꼴: "Oh SM" / "van der Berg JT" — 마지막 단어가 대문자 이니셜(1~3자)
 _AUTHOR_LAST_RE = re.compile(r"[A-Z][A-Z.\-]{0,2}$")
 _AUTHOR_WORD_RE = re.compile(r"[A-Za-z][A-Za-z.'’\-]*$")
 
-# 서지 꼬리(학술지 권·호·쪽·연도·doi 등) 신호
-_TAIL_PATTERNS = [
-    re.compile(r"(19|20)\d{2}\s*;"),               # "2021;36(14)" — 연도;권
-    re.compile(r";\s*\d+\s*\("),                   # ";36(" — 권(호
-    re.compile(r"\d+\s*\(\d+\)\s*:"),              # "36(14):e101"
-    re.compile(r"\bdoi\b|10\.\d{4,}/", re.I),      # doi 표기
-    re.compile(r"\bEpub\b|\bPMID\b", re.I),        # 전자출판일·PMID 표기
-    re.compile(r"^\(?(19|20)\d{2}\)?\s*[.,;]?$"),  # 연도만 있는 조각 "2012."
+# 이름 한 토막. 한글·유니코드 하이픈(Gonzalez‐Ortiz)까지 견디게 넓게 잡는다
+_NAME_WORD = r"[A-Z][\w'’‐‑\-]*"
+
+# 제목과 붙어 버린 저자 한 명
+#  - 이니셜 표기: "Choi EH.Hospital-Based …" / "… Case Reports. Lee DW"
+#  - 전체 이름  : "… Tae Sun Park. The Neuroprotective …"
+# 목록 마지막 저자에는 "and"/"&"가 앞에 붙기도 한다 ("…, and Ruhl S. (2013) 제목")
+_GLUED_AUTHOR = r"(?:and\s+|&\s*)?[A-Z][A-Za-z'’\-]*(?:\s+[A-Za-z'’\-]+)*\s+[A-Z][A-Z.\-]{0,2}"
+_GLUED_FULLNAME = _NAME_WORD + r"(?:\s+" + _NAME_WORD + r"){1,3}"
+
+# "Kim, Yeshin; Kang, Dong Woo; …; Suh, Jeewon." 처럼 세미콜론으로 나열한 저자 목록.
+# 마지막 저자 뒤의 마침표까지 통째로 떼어낸다.
+_SEMI_NAME = r"[A-Z](?:[\w'’‐‑\-]|\.(?=[A-Z]))*"
+_SEMI_AUTHOR_RUN = re.compile(
+    r"^(?:" + _SEMI_NAME + r",\s+" + _SEMI_NAME + r"(?:\s+" + _SEMI_NAME + r")*\.?\s*;\s*)+"
+    + _SEMI_NAME + r",\s+" + _SEMI_NAME + r"(?:\s+" + _SEMI_NAME + r")*\.\s+"
+)
+
+# 학위 표기 — 저자 목록 안에 섞여 들어온다 ("Jun Tak Choi, MD, Jeong-Hwan Seo, MD, PhD, …")
+_CREDENTIALS = {"md", "phd", "ms", "msc", "mph", "dds", "dmd", "rn", "bs", "mba", "dvm"}
+_CREDENTIAL_PREFIX_RE = re.compile(
+    r"^(?:" + "|".join(sorted(_CREDENTIALS, key=len, reverse=True)) + r")\b[\s.,]*", re.I
+)
+
+# "et al." 접두 — 저자 목록 끝의 "et al."이 제목에 붙어 남는다
+_ET_AL_PREFIX_RE = re.compile(r"^(?:and\s+)?et\s*\.?\s*al\.?[\s.,;]*", re.I)
+
+# 성과 이니셜이 붙어 버린 원문 오타를 떼어 본다 — "YoonSJ" → "Yoon SJ".
+# (판별할 때만 쓴다. 원문 자체는 바꾸지 않는다)
+_STUCK_INITIALS_RE = re.compile(r"\b([A-Z][a-z]{2,})([A-Z]{1,3})\b")
+
+# 인용문 앞머리의 표기 — "<주저자>", "<i>" 같은 꼬리표. 한글이 든 것과 html 태그만 뗀다
+# (제목 안에 나오는 "[18F]", "[2000]"을 건드리지 않기 위해서다)
+_LEADING_MARKER_RE = re.compile(r"^(?:</?[a-zA-Z]{1,6}>|[<\[][^<>\[\]]*[가-힣][^<>\[\]]*[>\]])\s*")
+
+# ① 인용문 맨 끝에 붙는 부가 정보 — 꼬리를 찾기 전에 먼저 떼어낸다
+_TRAILING_NOISE = [
+    re.compile(r"\s*https?://\S+\s*$", re.I),
+    re.compile(r"\s*PMID:?\s*\d+.*$", re.I),
+    re.compile(r"\s*PMCID:?\s*\S+.*$", re.I),
+    re.compile(r"\s*Epub\s+.*$", re.I),
+    re.compile(r"\s*doi:?\s*10\.\d{4,}/\S*\s*$", re.I),
 ]
+
+# ② 서지 꼬리의 시작 신호. 제목 안에도 연도가 들어갈 수 있으므로("2000-2019",
+#    "The 2017 … Charts") '연도 뒤에 권·호 구분자가 오는' 모양만 꼬리로 인정한다.
+_TAIL_START_RE = re.compile(
+    r"""
+      (?<![-–\d])(?:19|20)\d{2}                         # 연도 "2021" (앞에 하이픈·숫자가 붙으면
+                                                        #  "2007-2021:" 같은 연도 범위라 꼬리가 아니다)
+      (?:\s+[A-Za-z]{3,9}(?:\s*[-–]\s*[A-Za-z]{3,9})?)? #  " Sep" / " Nov-Dec"
+      (?:\s+\d{1,2})?                                   #  " 13"
+      \s*[;:,]                                          # 뒤따르는 권·호 구분자
+    | \d+\s*\(\s*(?:19|20)\d{2}\s*\)                    # "17 (2023) 436-443"
+    | \(\s*(?:19|20)\d{2}\s*\)                          # "… (2010)"
+    | \b(?:19|20)\d{2}\s*\.?\s*$                        # 끝에 연도만 "… 2018"
+    | \b\d{1,4}\s*[-–]\s*\d{1,4}\s*\.?\s*$              # 끝에 쪽 범위 "753-757."
+    """,
+    re.X,
+)
+
+# 제목 앞머리에 오는 발행연도: "2025, 제목…" / "(2013) 제목…". 뒤에 구분자나 괄호가
+# 있을 때만 뗀다 — "2017 Korean National Growth Charts"처럼 연도로 시작하는 제목 보호.
+_YEAR_PREFIX_RE = re.compile(
+    r"^\s*(?:\(\s*(?:19|20)\d{2}\s*\)|\[\s*(?:19|20)\d{2}\s*\]|(?:19|20)\d{2}\s*[.,;:])\s*"
+)
+
+# ⓪ 역순 형식의 제목 자리 — 인용문 맨 끝의 괄호
+_TRAILING_PAREN_RE = re.compile(r"\(([^()]+)\)\s*$")
+
+# 학술지명은 대문자(또는 숫자)로 시작한다 — "J Korean Med Sci" "Nutrients" "BMB report"
+_JOURNAL_START_RE = re.compile(r"[A-Z0-9]")
+
+# 학술지명 자리로 인정할 최대 길이(단어). "Allergy Asthma Immunol Res" 같은 약어가 대상
+_JOURNAL_MAX_WORDS = 8
+# 학술지명을 떼어낸 뒤 제목으로 남아야 하는 최소 단어 수 — 이보다 적게 남으면 떼지 않는다
+_TITLE_MIN_WORDS = 4
+# 제목 후보 최소 길이(문자) — 이보다 짧은 조각은 제목으로 보지 않는다
+MIN_TITLE_CHARS = 10
 
 
 def _is_author_token(token):
-    """쉼표로 나눈 토큰 하나가 '성 + 이니셜' 저자 표기인지 판별한다."""
+    """쉼표로 나눈 토큰 하나가 '성 + 이니셜' 저자 표기인지 판별한다.
+
+    ※ C단계 enrich_authors_mesh.py가 _is_author_segment()를 통해 이 판정을 그대로
+      가져다 쓴다. 파서 쪽 사정으로 이 함수를 느슨하게 만들면 그쪽 '본인 저자' 판정이
+      함께 흔들리므로, 파서 전용 관대한 판정은 아래 _looks_like_author()에 따로 둔다.
+    """
     t = token.strip().rstrip(".")
     if not t:
         return False
@@ -112,7 +209,13 @@ def _is_author_token(token):
 
 
 def _is_author_segment(segment):
-    """조각 하나가 저자 목록인지 판별 — 쉼표 토큰의 6할 이상이 저자 표기면 저자 조각."""
+    """조각 하나가 저자 목록인지 판별 — 쉼표 토큰의 6할 이상이 저자 표기면 저자 조각.
+
+    역방향 파서 자체는 이 함수를 쓰지 않지만, C단계 enrich_authors_mesh.py가
+    "인용문 저자부에서 (성, 이니셜) 뽑기"에 그대로 가져다 쓴다 — 제목·학술지 조각의
+    대문자 단어를 저자로 오인하지 않으려면 판별 규칙이 한 곳에 있어야 하기 때문이다.
+    지우면 그쪽이 AttributeError로 죽는다.
+    """
     tokens = [t for t in segment.split(",") if t.strip()]
     if not tokens:
         return False
@@ -122,9 +225,43 @@ def _is_author_segment(segment):
     return hits / len(tokens) >= 0.6
 
 
-def _is_reference_tail(segment):
-    """조각 하나가 학술지 서지 꼬리(연도·권·호·쪽·doi 등)인지 판별한다."""
-    return any(p.search(segment) for p in _TAIL_PATTERNS)
+def _is_fullname_token(token):
+    """'Heung Yong Jin' / 'Jun Tak Choi'처럼 이니셜 없이 전체 이름으로 쓴 저자 한 명.
+
+    2~4단어가 모두 대문자로 시작할 때만 인정한다. 논문 제목은 기능어(of/the/in)가
+    소문자라 이 조건에 잘 걸리지 않는다. 그래도 위험하므로 호출하는 쪽에서
+    '연속 2명 이상'일 때만 저자 목록으로 취급한다.
+    """
+    t = token.strip().rstrip(".")
+    if not t:
+        return False
+    if t.lower().replace(".", "") in _CREDENTIALS:   # "MD" "PhD" 같은 학위 표기
+        return True
+    words = t.split()
+    if not (2 <= len(words) <= 4):
+        return False
+    return all(re.fullmatch(_NAME_WORD, w) for w in words)
+
+
+def _is_name_fragment(token):
+    """'Choo'처럼 이니셜이 빠진 성 하나로 보이는 짧은 토막인지 — 1~2단어에 전부 대문자 시작."""
+    t = token.strip().rstrip(".")
+    words = t.split()
+    if not (1 <= len(words) <= 2):
+        return False
+    return all(re.fullmatch(_NAME_WORD, w) for w in words)
+
+
+def _looks_like_author(token):
+    """파서 전용 저자 판별 — _is_author_token에 원문 오타 보정을 더한 것.
+
+    "YoonSJ, Lee KB." 처럼 성과 이니셜이 붙어 버린 표기를 떼어서 한 번 더 본다
+    (윤선중 교수 인용문에 실제로 있는 모양이다). enrich_authors_mesh.py가 쓰는
+    _is_author_token 자체는 건드리지 않는다.
+    """
+    if _is_author_token(token):
+        return True
+    return _is_author_token(_STUCK_INITIALS_RE.sub(r"\1 \2", token.strip()))
 
 
 def _clean_title(text):
@@ -132,47 +269,191 @@ def _clean_title(text):
     return re.sub(r"\s+", " ", text).strip().rstrip(" .")
 
 
-def extract_title(citation):
-    """인용문 문자열에서 논문 제목을 뽑는다. 실패하면 None (호출한 쪽이 parseFailed 기록).
+def _strip_trailing_noise(text):
+    """인용문 끝의 doi·Epub·PMID·URL을 떼어낸다 (꼬리 탐색을 방해하므로 먼저 처리)."""
+    for pattern in _TRAILING_NOISE:
+        text = pattern.sub("", text)
+    return text.strip()
 
-    규칙:
-    ① 마침표(.·?·!)+공백으로 조각을 나눈다.
-    ② 저자 조각·서지 꼬리 조각·URL·너무 짧은 조각을 제외해 제목 후보를 만든다.
-    ③ 저자 조각 바로 다음 후보가 있으면 그것이 제목 ("저자들. 제목. 학술지…" 구조).
-    ④ 없으면 연도 숫자가 없는 후보를 우선하고, 그중 가장 긴 조각을 제목으로 본다.
-       (인용문이 제목 하나뿐인 항목도 이 규칙으로 처리된다)
+
+def _split_journal(head):
+    """② "…제목. 학술지명"에서 뒤쪽 학술지명을 떼어 (제목부, 학술지명)으로 나눈다.
+
+    확신이 없으면 떼지 않고 (head, None)을 돌려준다 — 제목이 잘리는 것보다
+    학술지명이 제목에 붙어 있는 편이 낫다(검색은 그래도 성공한다).
+    경계는 마침표 우선, 없으면 쉼표 — "제목, J Craniofac Surg" 형식도 있기 때문이다.
+    """
+    for boundary in (r"\.\s*(?=\S)", r",\s+"):
+        spots = [m.end() for m in re.finditer(boundary, head)]
+        if not spots:
+            continue
+        cut = spots[-1]                            # 가장 뒤쪽 경계 = 학술지명 시작
+        journal = head[cut:].strip(" .,;:")
+        title_part = head[:cut].strip(" .,;:")
+        if not journal or not title_part:
+            continue
+        if not _JOURNAL_START_RE.match(journal):
+            continue                               # 학술지명은 대문자로 시작한다.
+            # 이 조건이 없으면 "…development, improvement, and prospects"의
+            # "and prospects"가 학술지명으로 떨어져 제목이 잘린다.
+        if len(journal.split()) > _JOURNAL_MAX_WORDS:
+            continue                               # 너무 길다 — 학술지명이 아니라 제목의 일부
+        if len(title_part.split()) < _TITLE_MIN_WORDS or len(title_part) < MIN_TITLE_CHARS:
+            continue                               # 떼고 나면 제목이 남지 않는다 — 떼지 않는다
+        return title_part, journal
+    return head, None
+
+
+def _strip_leading_authors(text):
+    """③-1 제목 앞에 붙은 저자 목록을 떼어낸다.
+
+    지원하는 표기:
+      · "Lee CS, Kim JG, Yang YM. 제목…"                (성 + 이니셜)
+      · "Shin YS, Zhang LT, Zhao C, et al. 제목…"        (et al. 접두)
+      · "Heung Yong Jin, Kyung Ae Lee, Tae Sun Park. 제목…"  (전체 이름)
+      · "Jun Tak Choi, MD, Jeong-Hwan Seo, MD, PhD, … 제목…"  (학위 표기 섞임)
+      · "Kim, Yeshin; Kang, Dong Woo; …; Suh, Jeewon. 제목…"  (세미콜론 목록)
+      · "Choo, Ahn SH, Oh DS, … Shin BS. 제목…"          (첫 이름에 이니셜 누락)
+
+    전부 저자였으면 빈 문자열을 돌려준다 — 호출한 쪽이 이 후보를 버리고 다음을 시도한다.
+    """
+    stripped = text.lstrip(" .")
+
+    # "Last, First; Last, First. 제목" 형식은 통째로 떼어낸다
+    semi = _SEMI_AUTHOR_RUN.match(stripped)
+    if semi:
+        rest = stripped[semi.end():].strip()
+        if len(rest) >= MIN_TITLE_CHARS:
+            return rest
+
+    parts = stripped.split(",")
+
+    def run_from(start):
+        i = start
+        while i < len(parts) and _looks_like_author(parts[i]):
+            i += 1
+        return i
+
+    end = run_from(0)
+    if end == 0:
+        # 전체 이름 표기 저자 목록 — 연속 2명 이상일 때만 저자로 본다
+        k = 0
+        while k < len(parts) and _is_fullname_token(parts[k]):
+            k += 1
+        if k >= 2:
+            end = k
+        elif _is_name_fragment(parts[0]) and run_from(1) - 1 >= 2:
+            # 첫 이름에 이니셜이 빠진 원문 오타("Choo, Ahn SH, Oh DS, …") — 한 칸만 봐준다.
+            # 첫 토큰이 '성 하나'처럼 짧을 때만이다. 이 조건이 없으면
+            # "제목…. Lee DW, Kim JG, Yang YM"의 제목까지 저자로 먹어 버린다.
+            end = run_from(1)
+    if end == 0:
+        return text
+
+    rest = ",".join(parts[end:]).strip()
+    # 마지막 저자가 제목과 붙어 있는 경우
+    for pattern in (r"^(" + _GLUED_AUTHOR + r")\.\s*(?=\S)",
+                    r"^(" + _GLUED_FULLNAME + r")\.\s*(?=\S)"):
+        glued = re.match(pattern, rest)
+        if glued and (_looks_like_author(glued.group(1)) or _is_fullname_token(glued.group(1))):
+            rest = rest[glued.end():]
+            break
+    rest = _CREDENTIAL_PREFIX_RE.sub("", rest)     # "PhD. 제목…"
+    rest = _ET_AL_PREFIX_RE.sub("", rest)          # "et al. 제목…"
+    return rest.strip()
+
+
+def _strip_trailing_authors(text):
+    """③-2 제목 뒤에 붙은 저자 목록을 떼어낸다 ("제목. Lee DW, Kim JG, Yang YM")."""
+    parts = text.split(",")
+    j = len(parts)
+    while j > 0 and _looks_like_author(parts[j - 1]):
+        j -= 1
+    if j == len(parts):
+        return text
+    head = ",".join(parts[:j]).strip()
+    # 첫 저자가 제목과 붙어 있는 경우: "… Case Reports. Lee DW"
+    glued = re.search(r"\.\s*(" + _GLUED_AUTHOR + r")\s*$", head)
+    if glued and _looks_like_author(glued.group(1)):
+        head = head[: glued.start()]
+    return head.strip(" .,")
+
+
+def _title_from_head(head):
+    """꼬리를 떼어낸 앞부분에서 (제목, 학술지명)을 뽑는다. 제목이 안 남으면 (None, 학술지명)."""
+    title_part, journal = _split_journal(head)
+    title_part = _strip_trailing_authors(_strip_leading_authors(title_part))
+    title = _clean_title(_YEAR_PREFIX_RE.sub("", title_part))
+    if len(title) < MIN_TITLE_CHARS:
+        return None, journal
+    return title, journal
+
+
+def _parse_reversed(text):
+    """⓪ 역순 형식 "학술지명. 연도;권(호):쪽 (제목)" 이면 (제목, 학술지명)을 돌려준다.
+
+    정윤규 교수 인용문 10건이 전부 이 형식이다. 일반 파싱에 맡기면 첫 꼬리 신호에서
+    잘려 "Arch Craniofac Surg"(학술지명)가 제목이 되어 버린다.
+
+    맨 뒤 괄호가 곧 제목이라고 단정하면 안 된다 — "제목? (학술지명…)" 처럼 반대인
+    인용문도 있다(오세웅 교수 7건). 그래서 괄호 앞부분이 '서지 꼬리를 가진 학술지명'
+    모양일 때만 역순으로 판정한다.
+    """
+    paren = _TRAILING_PAREN_RE.search(text)
+    if not paren:
+        return None
+    inner = _clean_title(paren.group(1))
+    if len(inner) < MIN_TITLE_CHARS or len(inner.split()) < _TITLE_MIN_WORDS:
+        return None
+    head = text[: paren.start()].strip(" .,;:-–")
+    if not head:
+        return None
+    tails = list(_TAIL_START_RE.finditer(head))
+    if not tails:
+        return None                                # 서지 꼬리가 없으면 역순 형식이 아니다
+    journal = head[: tails[0].start()].strip(" .,;:-–")
+    if not journal or len(journal.split()) > _JOURNAL_MAX_WORDS:
+        return None                                # 앞부분이 학술지명 한 덩어리가 아니다
+    if not _JOURNAL_START_RE.match(journal):
+        return None
+    return inner, journal
+
+
+def parse_citation(citation):
+    """인용문에서 (제목, 학술지명)을 뽑는다. 제목을 못 뽑으면 (None, 학술지명).
+
+    학술지명은 titles_match()가 "제목 자리에 학술지명이 들어온" 파싱 실패를
+    걸러내는 데 쓴다. 학술지명을 못 찾았으면 None이다.
     """
     text = re.sub(r"\s+", " ", citation or "").strip()  # \s는 NBSP 등 유니코드 공백도 걸러낸다
     if not text:
-        return None
+        return None, None
+    text = _LEADING_MARKER_RE.sub("", _strip_trailing_noise(text)).strip()
+    if not text:
+        return None, None
 
-    segments = [s.strip() for s in re.split(r"(?<=[.?!])\s+", text) if s.strip()]
+    reversed_form = _parse_reversed(text)
+    if reversed_form:
+        return reversed_form
 
-    author_idx = None
-    candidates = []  # (조각 위치, 정리된 제목 후보)
-    for i, seg in enumerate(segments):
-        if _is_author_segment(seg):
-            if author_idx is None:
-                author_idx = i
+    # 꼬리 후보를 이른 것부터 잘라 보고, 제목이 남는 첫 후보를 채택한다.
+    # 마지막 후보 len(text)는 "꼬리를 못 찾았으니 자르지 않는다"는 뜻이다.
+    cuts = [m.start() for m in _TAIL_START_RE.finditer(text)] + [len(text)]
+    journal = None
+    for cut in cuts:
+        head = text[:cut].strip(" .,;:-–")
+        if not head:
             continue
-        if _is_reference_tail(seg) or re.match(r"https?://", seg):
-            continue
-        title = _clean_title(seg)
-        if len(title) >= MIN_TITLE_CHARS:
-            candidates.append((i, title))
+        title, found_journal = _title_from_head(head)
+        journal = found_journal or journal
+        if title:
+            return title, found_journal
+    return None, journal                           # 지어내지 않는다 — parseFailed로 넘긴다
 
-    if not candidates:
-        return None
 
-    # ③ "저자들. 제목. …" — 저자 조각 바로 다음 후보가 가장 믿을 만하다
-    if author_idx is not None:
-        for i, title in candidates:
-            if i == author_idx + 1:
-                return title
-
-    # ④ 연도 숫자가 없는 후보 우선("전남대학교출판부, 2015" 같은 출판 정보 배제), 그다음 긴 순
-    candidates.sort(key=lambda c: (1 if re.search(r"(19|20)\d{2}", c[1]) else 0, -len(c[1])))
-    return candidates[0][1]
+def extract_title(citation):
+    """인용문에서 제목만 뽑는다 (parse_citation의 얇은 껍데기). 실패하면 None."""
+    return parse_citation(citation)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -228,25 +509,35 @@ def call_with_retry(description, func):
 # PubMed 제목 검색
 # ---------------------------------------------------------------------------
 
-def _esearch(term):
+def _esearch(term, retmax=1):
     """esearch 1회 호출 — (전체 건수, PMID 목록) 반환. 출처: fetch_one.py의 search_pmids 변형.
 
     sort=relevance: 기본 정렬(최신순)은 여러 건이 걸릴 때 최신 논문이 무조건 1위가 되어
     남의 논문을 집을 수 있다. 관련도순이면 검색 문구와 가장 잘 맞는 논문이 1위가 된다.
+    다만 아래 search_pmid_candidates()가 순위가 아니라 제목 대조로 고르므로,
+    정렬 순서에 결과가 좌우되지는 않는다.
     """
-    params = {"db": "pubmed", "term": term, "retmax": 1, "retmode": "json", "sort": "relevance"}
+    params = {"db": "pubmed", "term": term, "retmax": retmax, "retmode": "json", "sort": "relevance"}
     resp = requests.get(fetch_one.ESEARCH_URL, params=params, timeout=30)
     resp.raise_for_status()  # 통신 실패(4xx/5xx)면 여기서 멈춘다 — 재실행하면 이어서 진행(resume)
     result = resp.json()["esearchresult"]
     return int(result.get("count", "0") or 0), result.get("idlist", [])
 
 
-def search_pmid_by_title(title):
-    """제목으로 PMID 1건을 찾는다. 못 찾거나 모호하면 None (호출한 쪽이 notFound 기록).
+def search_pmid_candidates(title):
+    """제목으로 후보 PMID를 최대 SEARCH_RETMAX건 받아 온다. 못 찾으면 빈 목록.
 
     1차: "제목"[Title] 구문 검색 — 제목 칸에서 정확히 그 문구를 찾는다.
     2차: 1차가 0건이면 제목을 일반 term으로 검색 — 특수문자·표기 차이로
          구문 검색이 실패해도 단어 단위 검색으로는 걸리는 경우를 구제한다.
+
+    **채택하지 않는다.** 어느 후보가 맞는지는 호출한 쪽이 efetch로 받은 실제 제목과
+    titles_match()로 대조해 결정한다. 예전에는 여기서 retmax=1로 1위만 받고
+    "히트 수가 많으면 모호하니 버린다"(hit>5)로 판단했는데, 둘 다 틀린 기준이었다:
+      · 일반 term 검색의 히트 수는 단어 조합 때문에 자연히 커서 모호도를 뜻하지 않는다.
+        실제로 정답이 1위인데 hit>5라는 이유만으로 버린 논문이 10편 있었다.
+      · 1위만 보면 2·3위에 있는 정답을 아예 못 본다 (7편이 이 경우였다).
+    후보를 늘려도 판정 기준(titles_match)은 그대로이므로 오귀속 위험은 늘지 않는다.
 
     통신이 재시도 후에도 실패하면 RequestException이 그대로 올라간다 —
     호출한 쪽(process_professor)이 그 논문만 notFound("HTTP 오류")로 기록하고 계속한다.
@@ -254,20 +545,18 @@ def search_pmid_by_title(title):
     # 검색 필드 문법과 충돌하는 문자를 걷어낸다 (["]는 구문 경계, []는 필드 표기, ()는 묶음)
     query = re.sub(r"\s+", " ", re.sub(r'["\[\]{}()]', " ", title)).strip()
     if not query:
-        return None
+        return []
 
     time.sleep(SLEEP_SECONDS)
-    count, ids = call_with_retry("PubMed 제목 검색(esearch)", lambda: _esearch(f'"{query}"[Title]'))
+    count, ids = call_with_retry(
+        "PubMed 제목 검색(esearch)", lambda: _esearch(f'"{query}"[Title]', SEARCH_RETMAX)
+    )
     if count == 0:
         time.sleep(SLEEP_SECONDS)
-        count, ids = call_with_retry("PubMed 제목 검색(esearch)", lambda: _esearch(query))
-
-    if count == 0 or not ids:
-        return None
-    if count > AMBIGUOUS_HIT_LIMIT:
-        # 같은 문구가 여러 논문에 걸린다 — 어느 논문인지 지목할 수 없으므로 넣지 않는다 (원칙 2)
-        return None
-    return ids[0]
+        count, ids = call_with_retry(
+            "PubMed 제목 검색(esearch)", lambda: _esearch(query, SEARCH_RETMAX)
+        )
+    return ids
 
 
 def _normalize_title(text):
@@ -275,21 +564,241 @@ def _normalize_title(text):
     return re.sub(r"[^0-9a-z가-힣]+", " ", (text or "").lower()).strip()
 
 
-def titles_match(extracted, fetched):
+# 부분 일치(포함 관계)를 허용할, 인용문에서 뽑은 제목의 최소 크기.
+# 근거: "J Korean Med Sci"(4단어·16자) 같은 학술지명이 제목 자리로 잘못 올라오면,
+# 그 문구를 제목 안에 담고 있는 남의 논문(정정·회신 공지 등)에 그대로 포함되어
+# 오귀속이 검증을 통과해 버렸다. 짧을수록 우연히 포함될 확률이 높다.
+# 문턱은 '인용문에서 뽑은 쪽'에만 건다 — PubMed가 준 제목은 실제 논문 제목이라
+# 짧아도("Young girl with chest pain") 파싱 실패 조각이 아니기 때문이다.
+SUBSTRING_MIN_WORDS = 6
+SUBSTRING_MIN_CHARS = 40
+
+# 유사도 문턱 — 기존 값 0.75를 유지한다. 실제 수집 데이터로 확인한 근거:
+# 같은 논문인데 표기가 다른 최악의 사례가 "Malaria-induced splenic infarction" ↔
+# "Falciparum Malaria-Induced Splenic Infarction"(0.86)이고, 학술지명이 제목으로
+# 올라온 오귀속 사례는 전부 0.2 미만이라 두 무리가 0.75를 사이에 두고 확실히 갈린다.
+SIMILARITY_THRESHOLD = 0.75
+
+# 정정·철회 공지 레코드 — 원논문 제목을 그대로 품고 있어서 부분 일치로 통과해 버린다.
+# 실제로 원논문 대신 이 레코드가 수집된 사례가 3건 있었다(송은기·김성훈·이재홍).
+# 회신(Letter to the Editor)·논평(Comment on)은 교수 본인이 저자일 수 있으므로 넣지 않는다.
+_CORRECTION_NOTICE_RE = re.compile(
+    r"^\s*(?:erratum|corrigendum|correction|publisher'?s?\s+correction|author\s+correction"
+    r"|retraction|retraction\s+note|notice\s+of\s+retraction|withdrawn"
+    r"|expression\s+of\s+concern)\b",
+    re.I,
+)
+
+
+def _comparable_pieces(extracted):
+    """비교에 쓸 조각들 — 추출 제목 전체와, 문장(.?!) 단위로 나눈 조각.
+
+    "Is Propofol Good Choice for Procedural Sedation? Evaluation of Propofol …"처럼
+    인용문이 두 문장이고 그중 한 문장이 논문 제목인 경우를 구제한다.
+    조각도 아래 길이 문턱을 넘어야 쓰이므로 학술지명 같은 짧은 조각은 통과하지 못한다.
+    """
+    whole = _normalize_title(extracted)
+    pieces = [whole]
+    for sentence in re.split(r"(?<=[.?!])\s+", extracted or ""):
+        piece = _normalize_title(sentence)
+        if piece and piece != whole:
+            pieces.append(piece)
+    return pieces
+
+
+def titles_match(extracted, fetched, journal=None):
     """인용문에서 뽑은 제목과 PubMed가 준 제목이 같은 논문인지 검증한다.
 
     검색은 어디까지나 '후보 찾기'다. 특히 2차(일반 term) 검색은 단어만 겹치는
     다른 논문을 돌려줄 수 있으므로, 수집한 제목을 인용문의 제목과 대조해
     일치하지 않으면 버린다 — 본인 페이지의 인용문이 신원 보증 기준점이기 때문이다.
-    - 포함 관계 허용: 인용문 제목이 일부만 추출됐거나(부제 누락) 학술지명이 붙은 경우
-    - 그 외에는 문자열 유사도 75% 이상일 때만 같은 논문으로 본다
+    - journal이 주어지고 추출 제목이 그 학술지명과 같으면 즉시 거부한다
+      (제목 자리에 학술지명이 들어온 것 = 파싱 실패이므로 어떤 논문도 인정하지 않는다)
+    - 정정·철회 공지 레코드는 거부한다 (인용문이 그 공지를 가리키는 게 아닌 한)
+    - 포함 관계는 추출 제목(또는 그 문장 조각)이 충분히 길 때만 허용한다
+    - 그 외에는 문자열 유사도 SIMILARITY_THRESHOLD 이상일 때만 같은 논문으로 본다
     """
     a, b = _normalize_title(extracted), _normalize_title(fetched)
     if not a or not b:
         return False
-    if a in b or b in a:
+    if journal and a == _normalize_title(journal):
+        return False
+    if _CORRECTION_NOTICE_RE.match(fetched or "") and not _CORRECTION_NOTICE_RE.match(extracted or ""):
+        return False                               # 원논문을 가리키는 인용문에 공지를 붙이지 않는다
+    for piece in _comparable_pieces(extracted):
+        if len(piece) < SUBSTRING_MIN_CHARS or len(piece.split()) < SUBSTRING_MIN_WORDS:
+            continue                               # 짧은 조각은 포함만으로 인정하지 않는다
+        if piece in b or b in piece:
+            return True
+    return difflib.SequenceMatcher(None, a, b).ratio() >= SIMILARITY_THRESHOLD
+
+
+# ---------------------------------------------------------------------------
+# 사람이 확정한 제외 목록 + 학술지·연도 대조(기록 전용)
+# ---------------------------------------------------------------------------
+
+def load_manual_exclusions():
+    """data/input/manual_exclusions.json — 사람이 오귀속으로 확정한 (PMID, 교수) 목록.
+
+    산출물에서 직접 지우면 다음 전체 실행에서 그대로 되살아나므로 설정 파일에 남긴다
+    (조립기의 manual_overrides.json과 같은 패턴).
+    근거(reason)가 없는 항목은 무시하고 경고한다 — 왜 뺐는지 모르는 제외는 두지 않는다.
+    """
+    if not MANUAL_EXCLUSIONS_PATH.exists():
+        return {}
+    with open(MANUAL_EXCLUSIONS_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    entries = data.get("exclusions", data)
+    table = {}
+    for pmid, entry in entries.items():
+        if pmid.startswith("_") or not isinstance(entry, dict):
+            continue
+        if not (entry.get("reason") or "").strip():
+            print(f"근거(reason)가 없어 무시합니다: manual_exclusions.json의 PMID {pmid}")
+            continue
+        names = entry.get("professors")
+        if names is None:
+            names = [entry["professor"]] if entry.get("professor") else []
+        table[str(pmid)] = {"professors": set(names), "reason": entry["reason"]}
+    if table:
+        print(f"수동 제외 목록: {len(table)}건 (data/input/manual_exclusions.json)")
+    return table
+
+
+def manual_exclusion_reason(exclusions, professor, pmid):
+    """이 교수에게서 이 PMID를 빼야 하면 그 근거를, 아니면 None."""
+    entry = exclusions.get(str(pmid))
+    if entry is None:
+        return None
+    if entry["professors"] and professor not in entry["professors"]:
+        return None                                # 다른 교수에게는 정상일 수 있다
+    return entry["reason"]
+
+
+# --- 학술지명·연도 대조 -------------------------------------------------------
+# 채택을 막지 않는다. review.journalMismatch 목록을 만들어 사람이 검수하게 할 뿐이다.
+#
+# 자동 거부로 쓰지 않는 이유(2026-08-21 시뮬레이션): 현재 수집 1,132편에 적용하면
+# 27편이 걸리는데 전건 대조 결과 진짜 오귀속은 10편뿐이고 16편은 정상이었다(정밀도 37%).
+# 오탐의 원인은 규칙이 아니라 원본 데이터다 —
+#   · 학술지 개명 ("Korean J Lab Med" → "Ann Lab Med")·자매지
+#   · 원문 오타 ("Front Nutr"이라 적었지만 doi는 10.3389/fneur = Frontiers in Neurology)
+#   · 학술지 자리에 서지 조각이 들어온 파싱 실패 ("Akata", "Hyunjun Lee")
+# 이런 걸 규칙으로 가를 수 없어서, 걸러내는 대신 목록으로 남겨 사람이 본다.
+
+# NLM 약어는 기능어를 빼고 만든다 ("Journal of Korean Medical Science" → "J Korean Med Sci").
+# 'journal'은 빼지 않는다 — 약어의 'J'와 대응시켜야 하기 때문이다.
+_JOURNAL_STOPWORDS = {"of", "the", "and", "for", "in", "on", "a", "an", "de", "der", "und"}
+_JOURNAL_TOKEN_SIM = 0.80        # 원문 오타 구제 ("Rresearch"↔"research" 0.94)
+YEAR_TOLERANCE = 2               # Epub 선공개·정식출판 차이를 감안한 허용 폭(년)
+
+_MONTH_WORDS = {
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    "january", "february", "march", "april", "june", "july", "august",
+    "september", "october", "november", "december",
+}
+
+
+def _journal_tokens(name):
+    """학술지명을 대조용 토큰으로 — 붙여 쓴 약어를 떼고, 소문자·알파벳만 남긴다."""
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", name or "")
+    text = re.sub(r"[^A-Za-z\s]+", " ", text).lower()
+    return [t for t in text.split() if t and t not in _JOURNAL_STOPWORDS]
+
+
+def _journal_token_match(x, y):
+    """토큰 하나끼리 같은 낱말로 볼 수 있는가 — 약어(접두)·철자 차이·오타를 견딘다."""
+    if x.startswith(y) or y.startswith(x):                    # med ⊂ medical, j ⊂ journal
         return True
-    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.75
+    if len(x) >= 4 and len(y) >= 4 and x[:4] == y[:4]:        # tumor↔tumour, internal↔international
+        return True
+    return difflib.SequenceMatcher(None, x, y).ratio() >= _JOURNAL_TOKEN_SIM
+
+
+def _journal_initials_match(a, b):
+    """'JCN' ↔ [journal, clinical, neurology] 처럼 머리글자 약어인 경우."""
+    for short, long_ in ((a, b), (b, a)):
+        if len(short) == 1 and 2 <= len(short[0]) <= 5 and len(long_) >= len(short[0]):
+            if short[0] == "".join(t[0] for t in long_[: len(short[0])]):
+                return True
+    return False
+
+
+def journals_match(cited, record):
+    """인용문 학술지명과 레코드 학술지명이 같은 학술지인가. 근거가 없으면 True(통과)."""
+    a, b = _journal_tokens(cited), _journal_tokens(record)
+    if not a or not b:
+        return True
+    if _journal_initials_match(a, b):
+        return True
+    if len(a) == len(b) and all(_journal_token_match(x, y) for x, y in zip(a, b)):
+        return True
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    i = 0
+    for token in long_:                            # 짧은 쪽이 긴 쪽에 순서대로 들어 있는가
+        if i < len(short) and _journal_token_match(token, short[i]):
+            i += 1
+    return i == len(short)
+
+
+def is_plausible_journal(name):
+    """파서가 뽑은 값이 정말 학술지명인가 — 아니면 대조하지 않는다.
+
+    실제로 "2016 May" "Epub2016Jan8" "Suppl 1" 같은 서지 조각이 학술지 자리에 들어온다.
+    이런 값으로 대조하면 무조건 불일치가 되어 멀쩡한 논문이 목록에 오른다.
+    """
+    if not name:
+        return False
+    if re.search(r"(?:19|20)\d{2}", name):          # 연도가 들어가면 학술지명이 아니다
+        return False
+    if re.match(r"^\s*(?:suppl|epub|vol|no|pp|pmid|doi)\b", name, re.I):
+        return False
+    tokens = _journal_tokens(name)
+    if not tokens or all(t in _MONTH_WORDS for t in tokens):
+        return False
+    return any(len(t) >= 3 for t in tokens)
+
+
+def citation_year(citation):
+    """인용문의 발행연도. 없으면 None.
+
+    parse_citation이 실제로 채택한 꼬리 위치의 연도를 쓴다. '첫 꼬리 신호'나
+    '마지막 4자리 숫자'로 잡으면 제목 안의 연도나 쪽번호를 읽는다
+    ("…in South Korea in 2007-2021: a nationwide…" → 2021, "Cancers 2021;13(15):2038" → 2038).
+    """
+    text = re.sub(r"\s+", " ", citation or "").strip()
+    if not text:
+        return None
+    text = _LEADING_MARKER_RE.sub("", _strip_trailing_noise(text)).strip()
+    if not text:
+        return None
+    matches = list(_TAIL_START_RE.finditer(text))
+    if not matches:
+        return None
+    if _parse_reversed(text):                       # 역순 형식은 앞쪽 꼬리가 서지다
+        chosen = matches[0]
+    else:
+        chosen = None
+        for m in matches:
+            head = text[: m.start()].strip(" .,;:-–")
+            if head and _title_from_head(head)[0]:  # 제목이 남는 첫 후보 = 채택된 꼬리
+                chosen = m
+                break
+        if chosen is None:
+            return None
+    found = re.search(r"(?:19|20)\d{2}", chosen.group(0))
+    return int(found.group(0)) if found else None
+
+
+def journal_mismatch(cited_journal, cited_year, paper):
+    """인용문과 레코드의 학술지·연도가 어긋나면 사유를, 아니면 None. (채택을 막지 않는다)"""
+    reasons = []
+    if is_plausible_journal(cited_journal) and not journals_match(cited_journal, paper.get("journal")):
+        reasons.append("학술지 다름")
+    if cited_year is not None and paper.get("year"):
+        if abs(cited_year - int(paper["year"])) > YEAR_TOLERANCE:
+            reasons.append(f"연도 {abs(cited_year - int(paper['year']))}년 차")
+    return " · ".join(reasons) if reasons else None
 
 
 # ---------------------------------------------------------------------------
@@ -306,62 +815,103 @@ def empty_record():
     }
 
 
-def process_professor(name, entries, progress_label, api_key):
+def process_professor(name, entries, progress_label, api_key, exclusions=None):
     """교수 1명의 인용문 목록을 논문 수집 결과로 바꾼다.
 
-    반환: (교수 결과 dict, 파싱 실패 인용문 목록, 검색 실패 항목 목록)
+    반환: (교수 결과, parseFailed, notFound, ambiguous, journalMismatch, manualExcluded)
     - 검색 실패 항목은 {"title": ...} 모양이고, 재시도까지 실패한 통신 오류로 포기한
       항목에는 "reason": "HTTP 오류"가 붙는다 (사람이 구분해 검수할 수 있게).
+    - 모호 항목은 후보 여러 편이 제목 대조를 통과한 경우다. 어느 쪽인지 지목할 수 없으므로
+      넣지 않고 review.ambiguous에 남겨 사람이 검수한다 (원칙 2: 불확실하면 넣지 않는다).
     - efetch·OpenAlex가 재시도 후에도 실패하면 FetchFailedError를 던진다 —
       main()이 fetchFailed로 기록하고 다음 교수로 넘어간다.
+
+    흐름이 예전과 다른 점: 검색 단계에서 채택하지 않고 후보만 모은다. 후보 전부를
+    efetch로 받아 실제 제목과 대조한 뒤에 고른다 — 검색 순위(relevance 1위)에
+    결과가 좌우되지 않게 하기 위해서다.
     """
     parse_failed = []      # 제목 추출 실패 인용문
-    not_found = []         # 검색 실패(0건·모호·제목 불일치·통신 오류) 항목
-    pmid_to_title = {}     # 확보한 PMID → 인용문에서 뽑은 제목 (입력 순서 유지 + 중복 제거)
+    not_found = []         # 검색 실패(0건·제목 불일치·통신 오류) 항목
+    ambiguous = []         # 통과 후보가 둘 이상이라 지목 불가
+    mismatched = []        # 학술지·연도가 어긋나 사람이 봐야 할 항목 (채택은 막지 않는다)
+    excluded = []          # 사람이 확정한 오귀속이라 빼 버린 항목
+    exclusions = exclusions if exclusions is not None else {}
+    sources = []           # [{"title", "journal", "pmids"}] — 입력 순서 유지
 
     for entry in entries:
         citation = entry[0] if entry else ""
-        title = extract_title(citation)
+        title, journal = parse_citation(citation)
         if title is None:
             parse_failed.append(citation)
             continue
         try:
-            pmid = search_pmid_by_title(title)
+            pmids = search_pmid_candidates(title)
         except requests.exceptions.RequestException as exc:
             # 재시도까지 실패한 통신 오류 — 이 논문만 포기하고 다음 인용문으로 계속한다
             print(f"제목 검색 통신 실패({_describe_error(exc)}) → notFound(HTTP 오류) 기록 후 계속")
             not_found.append({"title": title, "reason": "HTTP 오류"})
             continue
-        if pmid is None:
+        if not pmids:
             not_found.append({"title": title})
-        elif pmid not in pmid_to_title:   # PMID 기준 중복 제거 (같은 논문이 두 번 인용된 경우)
-            pmid_to_title[pmid] = title
+            continue
+        sources.append({"title": title, "journal": journal, "pmids": pmids,
+                        "year": citation_year(citation)})
 
     searched = len(entries) - len(parse_failed)
-    print(f"{progress_label} {name}: 인용문 {len(entries)}건 → PMID {len(pmid_to_title)}건 확보")
+    candidate_pmids = list(dict.fromkeys(p for s in sources for p in s["pmids"]))
+    print(f"{progress_label} {name}: 인용문 {len(entries)}건 → 후보 PMID {len(candidate_pmids)}건")
 
-    # efetch 상세 수집 — 1단계 부품 재사용 (PMID를 쉼표로 묶어 한 번에 요청).
+    # efetch 상세 수집 — 1단계 부품 재사용. 후보가 늘었으므로 EFETCH_BATCH개씩 나눠 부른다
+    # (한 번에 쉼표로 묶으면 URL이 너무 길어진다).
     # 재시도까지 실패하면 이 교수 전체를 fetchFailed로 넘긴다 (저장 안 함 → 재실행 때 자동 재시도).
+    fetched = []
     try:
-        papers = (
-            call_with_retry("PubMed 상세 수집(efetch)", lambda: fetch_one.fetch_papers(list(pmid_to_title)))
-            if pmid_to_title
-            else []
-        )
+        for start in range(0, len(candidate_pmids), EFETCH_BATCH):
+            chunk = candidate_pmids[start:start + EFETCH_BATCH]
+            fetched.extend(
+                call_with_retry("PubMed 상세 수집(efetch)", lambda c=chunk: fetch_one.fetch_papers(c))
+            )
     except requests.exceptions.RequestException as exc:
         raise FetchFailedError("efetch", _describe_error(exc))
+    by_pmid = {p["pmid"]: p for p in fetched}
 
-    # 제목 대조 검증 — 검색이 돌려준 논문이 인용문의 그 논문이 맞는지 확인하고,
-    # 다르면 결과에서 빼고 notFound로 돌린다 (불확실하면 넣지 않는다 — 원칙 2)
-    verified = []
-    for paper in papers:
-        claimed_title = pmid_to_title.get(paper["pmid"], "")
-        if titles_match(claimed_title, paper["title"]):
-            verified.append(paper)
+    # 제목 대조로 채택 — 인용문 하나당 통과 후보가 정확히 1편일 때만 넣는다.
+    # 0편이면 notFound, 2편 이상이면 ambiguous (불확실하면 넣지 않는다 — 원칙 2)
+    chosen = {}            # PMID → 인용문 제목 (입력 순서 유지 + 중복 제거)
+    for source in sources:
+        hits = [
+            pmid for pmid in source["pmids"]
+            if pmid in by_pmid and titles_match(source["title"], by_pmid[pmid]["title"], source["journal"])
+        ]
+        if len(hits) == 1:
+            reason = manual_exclusion_reason(exclusions, name, hits[0])
+            if reason:
+                # 사람이 오귀속으로 확정한 논문 — 조용히 빼지 않고 근거와 함께 남긴다
+                print(f"수동 제외: PMID {hits[0]} — {reason[:60]}")
+                excluded.append({"pmid": hits[0], "title": by_pmid[hits[0]]["title"],
+                                 "citedTitle": source["title"], "reason": reason})
+                continue
+            chosen.setdefault(hits[0], source["title"])
+            mismatch = journal_mismatch(source["journal"], source["year"], by_pmid[hits[0]])
+            if mismatch:
+                mismatched.append({
+                    "pmid": hits[0], "why": mismatch,
+                    "citedTitle": source["title"], "citedJournal": source["journal"],
+                    "citedYear": source["year"],
+                    "recordTitle": by_pmid[hits[0]]["title"],
+                    "recordJournal": by_pmid[hits[0]].get("journal"),
+                    "recordYear": by_pmid[hits[0]].get("year"),
+                })
+        elif not hits:
+            print(f"제목 대조 통과 후보 없음 → notFound: {source['title'][:70]}")
+            not_found.append({"title": source["title"]})
         else:
-            print(f"제목 불일치로 제외: PMID {paper['pmid']} (다른 논문으로 판단 → notFound 기록)")
-            not_found.append({"title": claimed_title})
-    papers = verified
+            print(f"통과 후보 {len(hits)}편 → ambiguous: {source['title'][:70]}")
+            ambiguous.append({
+                "title": source["title"],
+                "candidates": [{"pmid": p, "title": by_pmid[p]["title"]} for p in hits],
+            })
+    papers = [by_pmid[pmid] for pmid in chosen]
 
     # OpenAlex 인용수(50개 묶음) + 대표 3편 선정 — 2단계 부품 재사용.
     # efetch와 마찬가지로, 재시도까지 실패하면 이 교수 전체를 fetchFailed로 넘긴다.
@@ -387,9 +937,11 @@ def process_professor(name, entries, progress_label, api_key):
             "sourceEntries": len(entries),  # 입력 인용문 수
             "collected": len(papers),     # 수집된 논문 수 (PMID 중복 제거 후)
             "notFound": len(not_found),   # 검색 실패 수
+            "ambiguous": len(ambiguous),  # 통과 후보가 둘 이상이라 넣지 않은 수
+            "excluded": len(excluded),    # 사람이 확정한 오귀속이라 뺀 수
         },
     }
-    return record, parse_failed, not_found
+    return record, parse_failed, not_found, ambiguous, mismatched, excluded
 
 
 def load_state():
@@ -399,14 +951,18 @@ def load_state():
             state = json.load(f)
         state.setdefault("professors", {})
         state.setdefault("review", {})
-        for key in ("noPapers", "parseFailed", "notFound", "fetchFailed"):
+        for key in ("noPapers", "parseFailed", "notFound", "ambiguous",
+                    "journalMismatch", "manualExcluded", "fetchFailed"):
             state["review"].setdefault(key, [])   # 이전 버전 산출물에 없던 목록도 채워 준다
         print(f"기존 산출물 발견: 교수 {len(state['professors'])}명 완료됨 → 이어서 진행 (resume)")
         return state
     return {
         "collectedAt": None,
         "professors": {},
-        "review": {"noPapers": [], "parseFailed": [], "notFound": [], "fetchFailed": []},
+        "review": {
+            "noPapers": [], "parseFailed": [], "notFound": [], "ambiguous": [],
+            "journalMismatch": [], "manualExcluded": [], "fetchFailed": []
+        },
     }
 
 
@@ -439,7 +995,10 @@ def print_summary(state, elapsed_seconds, run_professors, run_searched):
     print(f"수집 논문: {collected}편 (PMID 중복 제거 후)")
     print(
         f"review: noPapers {len(review['noPapers'])} / parseFailed {len(review['parseFailed'])}"
-        f" / notFound {len(review['notFound'])} / fetchFailed {len(review['fetchFailed'])}"
+        f" / notFound {len(review['notFound'])} / ambiguous {len(review['ambiguous'])}"
+        f" / journalMismatch {len(review['journalMismatch'])}"
+        f" / manualExcluded {len(review['manualExcluded'])}"
+        f" / fetchFailed {len(review['fetchFailed'])}"
     )
     if review["fetchFailed"]:
         names = ", ".join(e["professor"] for e in review["fetchFailed"])
@@ -453,6 +1012,7 @@ def main():
     # 2단계 부품(enrich_citations)의 파서를 그대로 써서 같은 .env 값을 일관되게 읽는다.
     # PubMed(E-utilities) 호출에는 키가 필요 없다 — 이 키는 OpenAlex 전용이다.
     api_key = enrich_citations.read_openalex_api_key()
+    exclusions = load_manual_exclusions()
 
     if not INPUT_PATH.exists():
         print(f"입력 파일이 없습니다: {INPUT_PATH}")
@@ -490,8 +1050,8 @@ def main():
             continue
 
         try:
-            record, parse_failed, not_found = process_professor(
-                name, entries, f"[{position}/{total_with_papers}]", api_key
+            record, parse_failed, not_found, ambiguous, mismatched, excluded = process_professor(
+                name, entries, f"[{position}/{total_with_papers}]", api_key, exclusions
             )
         except FetchFailedError as exc:
             # 이 교수는 저장하지 않는다 — 재실행하면 자동으로 다시 시도된다.
@@ -512,13 +1072,20 @@ def main():
             state["review"]["parseFailed"].append({"professor": name, "citation": citation[:80]})
         for item in not_found:
             state["review"]["notFound"].append({"professor": name, **item})
+        for item in ambiguous:
+            state["review"]["ambiguous"].append({"professor": name, **item})
+        for item in mismatched:
+            state["review"]["journalMismatch"].append({"professor": name, **item})
+        for item in excluded:
+            state["review"]["manualExcluded"].append({"professor": name, **item})
         save_state(state)  # 교수 1명 끝날 때마다 즉시 저장 — 끊겨도 여기까지 보존
 
         run_professors += 1
         run_searched += record["stats"]["cited"]
         print(
             f"  → 수집 {record['stats']['collected']}편 · 대표 {len(record['papers'])}편"
-            f" · notFound {record['stats']['notFound']} · parseFailed {len(parse_failed)}"
+            f" · notFound {record['stats']['notFound']} · ambiguous {len(ambiguous)}"
+            f" · parseFailed {len(parse_failed)} · 제외 {len(excluded)}"
         )
 
     print_summary(state, time.monotonic() - started, run_professors, run_searched)

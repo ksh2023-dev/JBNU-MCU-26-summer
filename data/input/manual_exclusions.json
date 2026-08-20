@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "사람이 원문 인용문과 전건 대조해 '오귀속'으로 확정한 논문 목록이다.",
+    "build_all.py가 채택 단계에서 이 파일을 읽어 해당 교수에게 그 PMID를 붙이지 않는다.",
+    "산출물(professors_papers.json)에서 직접 지우면 다음 전체 실행에서 그대로 되살아나므로",
+    "여기에 남긴다 — 조립기의 manual_overrides.json과 같은 패턴이다.",
+    "",
+    "형식: PMID를 키로 두고",
+    "  professors : 이 PMID를 제외할 교수 이름 목록 (빈 목록이면 모든 교수에서 제외)",
+    "  reason     : 왜 오귀속인지. 근거 없는 항목은 build_all.py가 무시하고 경고한다",
+    "  verifiedAt : 사람이 확인한 날짜",
+    "",
+    "판단 보류로 '넣지 않은' 건 (본인 논문일 가능성이 높다):",
+    "  40704002 박진 - 옴 진료지침 Part 1. 제목이 인용문과 정확히 일치한다.",
+    "                  학술지만 Korean J Dermatology(2023) ↔ Ewha Medical Journal(2024)로 달라",
+    "                  같은 지침을 두 학술지에 중복 게재했을 가능성이 있다."
+  ],
+  "updatedAt": "2026-08-21",
+  "exclusions": {
+    "40703982": {
+      "professors": ["박진"],
+      "reason": "인용문은 옴 진료지침 Part 1(Epidemiology, Clinical Manifestations, and Diagnosis / Korean Journal of Dermatology 2023)인데, 매칭된 논문은 Part 2(Treatment / Ewha Medical Journal 2024)로 다른 편이다",
+      "verifiedAt": "2026-08-21"
+    },
+    "9108896": {
+      "professors": ["박성희"],
+      "reason": "인용문은 한글 논문 '뇌질환 후 인지 장애 환자에서 Donepezil이 인지 기능에 미치는 효과'(대한재활의학회지 2002)인데, 매칭된 논문은 약 이름만 겹치는 영문 리뷰 'Donepezil.'(Drugs & Aging 1997)이다",
+      "verifiedAt": "2026-08-21"
+    },
+    "10226779": {
+      "professors": ["김정기"],
+      "reason": "인용문은 한글 논문 '흰쥐 턱밑샘에서 연령 의존적 Insulin-like Growth Factor계 변화'(2005)인데, 매칭된 논문은 용어만 겹치는 'Insulin-like growth factor.'(Hormone and Metabolic Research 1999)이다",
+      "verifiedAt": "2026-08-21"
+    },
+    "38824187": {
+      "professors": ["이재홍"],
+      "reason": "인용문이 밝힌 학술지는 Journal of Periodontal & Implant Science인데 매칭된 논문은 Scientific Reports(2024)다. 제목이 비슷한 별개 논문으로 판단했다",
+      "verifiedAt": "2026-08-21"
+    },
+    "28215262": {
+      "professors": ["양연미"],
+      "reason": "인용문은 'Diagnosis and Effect of Maxillary Expansion in Pediatric Sleep-Disordered Breathing'(J Korean Acad Pediatr Dent 2019)인데, 매칭된 논문은 'Bimaxillary expansion therapy for pediatric sleep-disordered breathing'(Sleep Medicine 2017)으로 학술지·연도·제목이 모두 다르다",
+      "verifiedAt": "2026-08-21"
+    },
+    "9128291": {
+      "professors": ["김선준"],
+      "reason": "인용문은 'Apolipoprotein E Polymorphism and Plasma Lipid Levels in Obese Children'(Journal of the Korean Pediatric Society 2000)인데, 매칭된 논문은 'Relation of apolipoprotein E polymorphism to lipid metabolism in obese children'(Pediatric Research 1997)으로 학술지·연도가 다르다",
+      "verifiedAt": "2026-08-21"
+    },
+    "30628130": {
+      "professors": ["김진규"],
+      "reason": "인용문이 밝힌 학술지는 Perinatology인데 매칭된 논문은 Journal of Paediatrics and Child Health(2019)다. 제목도 'Use of propranolol for…' ↔ 'Efficacy of propranolol treatment in…'으로 다르다",
+      "verifiedAt": "2026-08-21"
+    },
+    "26436043": {
+      "professors": ["서봉직"],
+      "reason": "인용문은 'Direct Immunofluorescence in Clinically Diagnosed Oral Lichen Planus'(Journal of Oral Medicine and Pain 2016)인데, 매칭된 논문은 'Direct Immunofluorescence in Oral Lichen Planus'(Journal of Clinical and Diagnostic Research 2015)로 학술지·연도가 다르다",
+      "verifiedAt": "2026-08-21"
+    },
+    "11606960": {
+      "professors": ["김정기", "전영미"],
+      "reason": "인용문은 'Resistance to Sliding of Self-ligating Brackets … with Second-order Angulation in Dry State'(2010)인데, 매칭된 논문은 'Resistance to sliding … in the dry and wet (saliva) states'(American Journal of Orthodontics and Dentofacial Orthopedics 2001)로 연도가 9년 차이 나는 별개 논문이다",
+      "verifiedAt": "2026-08-21"
+    }
+  }
+}
