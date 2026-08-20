@@ -70,6 +70,21 @@ EFETCH_BATCH = 100
 # 제목 후보 최소 길이(문자) — 이보다 짧은 조각은 제목으로 보지 않는다
 MIN_TITLE_CHARS = 10
 
+# 제목의 한글 비중이 이 값을 넘으면 PubMed 검색을 건너뛴다.
+#
+# 왜 필요한가: 한글 제목에 섞인 영문 낱말만 걸려 엉뚱한 논문이 붙는다. 실제로
+#   "대상포진 Up-to-Date"                → "Up-to-Date."(Int J Urol 2018)
+#   "…만성폐쇄성폐질환(COPD) 임상진료지침"  → "Copd."(BMJ Clin Evid 2011)
+#   "…Donepezil이 인지 기능에 미치는 효과"  → "Donepezil."(Drugs & Aging 1997)
+# 이 붙었다. PubMed는 국제지, KCI는 국내지라는 수집 설계와도 맞다.
+#
+# 임계값 근거(2026-08-21 실측, 제목 추출 성공 1,974건):
+#   10% 이상 245건 · 20% 이상 228 · 30% 이상 223 · 50% 이상 202 · 90% 이상 162
+#   10~30% 구간 22건은 **영문 제목에 한글 학술지명만 붙은 것**이라 검색 대상으로 남겨야 한다
+#   ("Extrapelvic endometriosis. 대한외과학회지"). 30%를 넘으면 제목 자체가 한글이다.
+#   30% 이상 223건이 실제로 끌어온 논문은 2건뿐이었고 둘 다 오귀속이었다(오탐 0건).
+KOREAN_TITLE_RATIO = 0.30
+
 # 입출력 위치: (저장소 루트)/data/… — 어느 폴더에서 실행해도 같은 곳을 읽고 쓴다
 ROOT = Path(__file__).resolve().parents[2]
 INPUT_PATH = ROOT / "data" / "input" / "professor_paper_lists.json"
@@ -162,6 +177,21 @@ _TITLE_MIN_WORDS = 4
 # 제목 후보 최소 길이(문자) — 이보다 짧은 조각은 제목으로 보지 않는다
 MIN_TITLE_CHARS = 10
 
+# 제목의 한글 비중이 이 값을 넘으면 PubMed 검색을 건너뛴다.
+#
+# 왜 필요한가: 한글 제목에 섞인 영문 낱말만 걸려 엉뚱한 논문이 붙는다. 실제로
+#   "대상포진 Up-to-Date"                → "Up-to-Date."(Int J Urol 2018)
+#   "…만성폐쇄성폐질환(COPD) 임상진료지침"  → "Copd."(BMJ Clin Evid 2011)
+#   "…Donepezil이 인지 기능에 미치는 효과"  → "Donepezil."(Drugs & Aging 1997)
+# 이 붙었다. PubMed는 국제지, KCI는 국내지라는 수집 설계와도 맞다.
+#
+# 임계값 근거(2026-08-21 실측, 제목 추출 성공 1,974건):
+#   10% 이상 245건 · 20% 이상 228 · 30% 이상 223 · 50% 이상 202 · 90% 이상 162
+#   10~30% 구간 22건은 **영문 제목에 한글 학술지명만 붙은 것**이라 검색 대상으로 남겨야 한다
+#   ("Extrapelvic endometriosis. 대한외과학회지"). 30%를 넘으면 제목 자체가 한글이다.
+#   30% 이상 223건이 실제로 끌어온 논문은 2건뿐이었고 둘 다 오귀속이었다(오탐 0건).
+KOREAN_TITLE_RATIO = 0.30
+
 
 # 저자 판별 — 구현은 citation_utils.py에 있다 (C단계와 공유)
 _is_author_token = citation_utils.is_author_token
@@ -169,6 +199,24 @@ _is_author_segment = citation_utils.is_author_segment
 _is_fullname_token = citation_utils.is_fullname_token
 _is_name_fragment = citation_utils.is_name_fragment
 _looks_like_author = citation_utils.looks_like_author
+
+
+_HANGUL_RE = re.compile(r"[가-힣]")
+_LETTER_RE = re.compile(r"[가-힣A-Za-z]")
+
+
+def hangul_ratio(text):
+    """제목에서 한글이 차지하는 비중. 글자(한글+로마자)만 세고 숫자·기호는 빼서
+    "제 10판(2012)" 같은 표기에 좌우되지 않게 한다."""
+    letters = _LETTER_RE.findall(text or "")
+    if not letters:
+        return 0.0
+    return len(_HANGUL_RE.findall(text or "")) / len(letters)
+
+
+def is_korean_title(title):
+    """PubMed 검색을 건너뛸 한글 제목인가 (KOREAN_TITLE_RATIO 주석 참고)."""
+    return hangul_ratio(title) >= KOREAN_TITLE_RATIO
 
 
 def _clean_title(text):
@@ -727,7 +775,8 @@ def empty_record():
 def process_professor(name, entries, progress_label, api_key, exclusions=None):
     """교수 1명의 인용문 목록을 논문 수집 결과로 바꾼다.
 
-    반환: (교수 결과, parseFailed, notFound, ambiguous, journalMismatch, manualExcluded)
+    반환: (교수 결과, parseFailed, notFound, ambiguous, journalMismatch,
+           manualExcluded, koreanTitleSkipped)
     - 검색 실패 항목은 {"title": ...} 모양이고, 재시도까지 실패한 통신 오류로 포기한
       항목에는 "reason": "HTTP 오류"가 붙는다 (사람이 구분해 검수할 수 있게).
     - 모호 항목은 후보 여러 편이 제목 대조를 통과한 경우다. 어느 쪽인지 지목할 수 없으므로
@@ -744,6 +793,7 @@ def process_professor(name, entries, progress_label, api_key, exclusions=None):
     ambiguous = []         # 통과 후보가 둘 이상이라 지목 불가
     mismatched = []        # 학술지·연도가 어긋나 사람이 봐야 할 항목 (채택은 막지 않는다)
     excluded = []          # 사람이 확정한 오귀속이라 빼 버린 항목
+    korean_skipped = []    # 한글 제목이라 PubMed 검색을 건너뛴 항목 (KCI 수집 대상)
     exclusions = exclusions if exclusions is not None else {}
     sources = []           # [{"title", "journal", "pmids"}] — 입력 순서 유지
 
@@ -752,6 +802,13 @@ def process_professor(name, entries, progress_label, api_key, exclusions=None):
         title, journal = parse_citation(citation)
         if title is None:
             parse_failed.append(citation)
+            continue
+        if is_korean_title(title):
+            # 한글 제목은 PubMed 대상이 아니다 — 섞인 영문 낱말만 걸려 남의 논문이 붙는다.
+            # notFound가 아니라 별도 목록에 남긴다 (검색을 시도조차 하지 않았으므로).
+            print(f"한글 제목 → PubMed 검색 건너뜀, KCI 수집 대상: {title[:55]}")
+            korean_skipped.append({"title": title,
+                                   "hangulRatio": round(hangul_ratio(title), 2)})
             continue
         try:
             pmids = search_pmid_candidates(title)
@@ -766,7 +823,7 @@ def process_professor(name, entries, progress_label, api_key, exclusions=None):
         sources.append({"title": title, "journal": journal, "pmids": pmids,
                         "year": citation_year(citation)})
 
-    searched = len(entries) - len(parse_failed)
+    searched = len(entries) - len(parse_failed) - len(korean_skipped)
     candidate_pmids = list(dict.fromkeys(p for s in sources for p in s["pmids"]))
     print(f"{progress_label} {name}: 인용문 {len(entries)}건 → 후보 PMID {len(candidate_pmids)}건")
 
@@ -848,9 +905,10 @@ def process_professor(name, entries, progress_label, api_key, exclusions=None):
             "notFound": len(not_found),   # 검색 실패 수
             "ambiguous": len(ambiguous),  # 통과 후보가 둘 이상이라 넣지 않은 수
             "excluded": len(excluded),    # 사람이 확정한 오귀속이라 뺀 수
+            "koreanSkipped": len(korean_skipped),  # 한글 제목이라 검색하지 않은 수
         },
     }
-    return record, parse_failed, not_found, ambiguous, mismatched, excluded
+    return record, parse_failed, not_found, ambiguous, mismatched, excluded, korean_skipped
 
 
 def load_state():
@@ -861,7 +919,8 @@ def load_state():
         state.setdefault("professors", {})
         state.setdefault("review", {})
         for key in ("noPapers", "parseFailed", "notFound", "ambiguous",
-                    "journalMismatch", "manualExcluded", "fetchFailed"):
+                    "journalMismatch", "manualExcluded", "koreanTitleSkipped",
+                    "fetchFailed"):
             state["review"].setdefault(key, [])   # 이전 버전 산출물에 없던 목록도 채워 준다
         print(f"기존 산출물 발견: 교수 {len(state['professors'])}명 완료됨 → 이어서 진행 (resume)")
         return state
@@ -870,7 +929,8 @@ def load_state():
         "professors": {},
         "review": {
             "noPapers": [], "parseFailed": [], "notFound": [], "ambiguous": [],
-            "journalMismatch": [], "manualExcluded": [], "fetchFailed": []
+            "journalMismatch": [], "manualExcluded": [], "koreanTitleSkipped": [],
+            "fetchFailed": []
         },
     }
 
@@ -907,6 +967,7 @@ def print_summary(state, elapsed_seconds, run_professors, run_searched):
         f" / notFound {len(review['notFound'])} / ambiguous {len(review['ambiguous'])}"
         f" / journalMismatch {len(review['journalMismatch'])}"
         f" / manualExcluded {len(review['manualExcluded'])}"
+        f" / koreanTitleSkipped {len(review['koreanTitleSkipped'])}"
         f" / fetchFailed {len(review['fetchFailed'])}"
     )
     if review["fetchFailed"]:
@@ -959,7 +1020,8 @@ def main():
             continue
 
         try:
-            record, parse_failed, not_found, ambiguous, mismatched, excluded = process_professor(
+            (record, parse_failed, not_found, ambiguous, mismatched,
+             excluded, korean_skipped) = process_professor(
                 name, entries, f"[{position}/{total_with_papers}]", api_key, exclusions
             )
         except FetchFailedError as exc:
@@ -987,6 +1049,8 @@ def main():
             state["review"]["journalMismatch"].append({"professor": name, **item})
         for item in excluded:
             state["review"]["manualExcluded"].append({"professor": name, **item})
+        for item in korean_skipped:
+            state["review"]["koreanTitleSkipped"].append({"professor": name, **item})
         save_state(state)  # 교수 1명 끝날 때마다 즉시 저장 — 끊겨도 여기까지 보존
 
         run_professors += 1
@@ -995,6 +1059,7 @@ def main():
             f"  → 수집 {record['stats']['collected']}편 · 대표 {len(record['papers'])}편"
             f" · notFound {record['stats']['notFound']} · ambiguous {len(ambiguous)}"
             f" · parseFailed {len(parse_failed)} · 제외 {len(excluded)}"
+            f" · 한글건너뜀 {len(korean_skipped)}"
         )
 
     print_summary(state, time.monotonic() - started, run_professors, run_searched)

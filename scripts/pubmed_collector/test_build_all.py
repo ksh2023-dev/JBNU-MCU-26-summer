@@ -559,5 +559,53 @@ class 저자_판별_공용모듈(unittest.TestCase):
         )
 
 
+class 한글_제목_검색_제외(unittest.TestCase):
+    """한글 제목 인용문은 PubMed 검색을 건너뛴다 (KCI 수집 대상).
+
+    한글 제목에 섞인 영문 낱말만 걸려 엉뚱한 논문이 붙었다:
+      "대상포진 Up-to-Date"                  → "Up-to-Date."(Int J Urol 2018)
+      "…만성폐쇄성폐질환(COPD) 임상진료지침"   → "Copd."(BMJ Clin Evid 2011)
+      "…Donepezil이 인지 기능에 미치는 효과"   → "Donepezil."(Drugs & Aging 1997)
+    """
+
+    def test_한글_제목은_건너뛴다(self):
+        for title in (
+            "대상포진 Up-to-Date",
+            "일차의료용 근거기반 만성폐쇄성폐질환(COPD) 임상진료지침, 대한의학회, 질병관리본부",
+            "뇌질환 후 인지 장애 환자에서 Donepezil이 인지 기능에 미치는 효과",
+            "흰쥐 턱밑샘에서 연령 의존적 Insulin-like Growth Factor계 변화",
+        ):
+            self.assertTrue(build_all.is_korean_title(title), title)
+
+    def test_영문_제목에_한글_학술지명만_붙은_것은_건너뛰지_않는다(self):
+        # 10~30% 구간 22건이 이 모양이다 — PubMed에 색인된 논문일 수 있으므로 검색해야 한다
+        for title in (
+            "Extrapelvic endometriosis. 대한외과학회지",
+            "Cerebral Infarction Presenting with Unilateral Isolated Foot Drop 대한신경외과학회지 56권3호",
+            "Congenital Hypoplasia of Internal Carotid Artery Accompanying with Cerebral Aneurysms. 대한신경외과학회",
+        ):
+            self.assertFalse(build_all.is_korean_title(title), title)
+
+    def test_순수_영문_제목은_영향받지_않는다(self):
+        self.assertEqual(build_all.hangul_ratio(TITLE_LEE), 0.0)
+        self.assertFalse(build_all.is_korean_title(TITLE_LEE))
+
+    def test_비중은_글자만_세고_숫자_기호는_뺀다(self):
+        # "제 10판(2012)" 같은 표기에 좌우되면 안 된다
+        self.assertAlmostEqual(build_all.hangul_ratio("가나다 abc"), 0.5)
+        self.assertEqual(build_all.hangul_ratio("2012 (13):145-150"), 0.0)
+
+    def test_건너뛴_인용문이_논문을_끌어오지_않는다(self):
+        # 실제 산출물에서 두 오귀속이 사라졌는지 고정한다
+        state = json.loads(
+            (Path(build_all.__file__).resolve().parents[2]
+             / "data/output/professors_papers.json").read_text(encoding="utf-8")
+        )
+        for professor, pmid in [("김연동", "30311302"), ("원유희", "21639960")]:
+            papers = state["professors"][professor]["allPapers"]
+            self.assertNotIn(pmid, [p["pmid"] for p in papers])
+        self.assertTrue(state["review"]["koreanTitleSkipped"], "koreanTitleSkipped가 비어 있다")
+
+
 if __name__ == "__main__":
     unittest.main()
