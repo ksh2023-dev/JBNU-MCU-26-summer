@@ -26,12 +26,12 @@
 - **요청 구조 변경 없음** (`query` · `filters` · `sort` · `minScore` · `page` 그대로)
 - **응답 필드 구조 변경 없음** — 교수 상세 `papers`의 논문 식별자도 **v6.4의 `pmid` / `kciId` 두 필드를 그대로 유지합니다**
 - **응답 `keywords`는 필드 이름·타입 그대로**이고, 그 배열을 **무엇으로 채우는지**(MeSH 우선 → KCI fallback → `[]`)가 확정됩니다
-- 그 외에는 프론트의 화면 표시 정책·링크 조립 규칙, 그리고 백엔드/데이터 파이프라인 내부의 키워드 원본 보존(`meshTerms` / `meshTermsKo` / `kciKeywords`) · `latestPaper` 산정 범위와 내부 스키마 · 논문 귀속 규칙이 바뀝니다
+- 그 외에는 프론트의 화면 표시 정책·링크 조립 규칙, 그리고 백엔드/데이터 파이프라인 내부의 키워드 원본 보존(`meshTerms` / `kciKeywords`)과 한글 검색용 번역 필드(`keywordsKo`) · `latestPaper` 산정 범위와 내부 스키마 · 논문 귀속 규칙이 바뀝니다
 
 | # | 변경 | 영향 |
 | --- | --- | --- |
 | 1 | **`keywords` 화면 노출 정책 확정** — 교수 카드에서는 앞 **4개**까지 + 나머지 `+N`, 교수 상세에서는 **전체** 표시. v6.4의 "화면 미표시"를 대체한다 | 1-1, 1-2, 4장 |
-| 2 | **`keywords` 데이터 선택 정책 확정** — 최종 `keywords`는 **영문 배열**이며 **MeSH 우선 → MeSH가 없으면 `kciKeywords.en` → 둘 다 없으면 `[]`**. `professors.json` 내부에는 `meshTerms`(MeSH 원본 영문) · `meshTermsKo`(MeSH 한글화 결과) · `kciKeywords`(`{ ko, en }` 원본)를 **출처별로 분리 보존**하고(모두 내부 필드 · 응답에 추가하지 않음), **검색에는 keyword 계열 전체의 합집합(`keywords` ∪ `meshTerms` ∪ `meshTermsKo` ∪ `kciKeywords.ko` ∪ `kciKeywords.en`, 중복 제거)을 사용**하며 **표시용 선택 규칙과 검색 범위를 분리**한다. KCI keyword에는 **별도 번역 과정을 두지 않는다**. keyword 관련 배열은 **항상 존재하는 배열이며 빈 값은 `[]`**(`null`·생략 금지, `kciKeywords.ko`/`.en`도 항상 유지)이고, **KCI keyword 수집 완료 전에는 전체 교수의 `kciKeywords`가 `[]`다**. **`keywords` 배열의 정렬 규칙은 아직 미정이다** (5장 미확정 6번) | 1-1, 2장 검색 대상 필드, 4장, 5장 |
+| 2 | **`keywords` 데이터 선택 정책 확정** — 최종 `keywords`는 **영문 배열**이며 **MeSH 우선 → MeSH가 없으면 `kciKeywords.en` → 둘 다 없으면 `[]`**. `professors.json` 내부에는 `keywordsKo`(최종 `keywords`의 한글화 결과 · v6.5에서 기존 `meshTermsKo`를 대체) · `meshTerms`(MeSH 원본 영문) · `kciKeywords`(`{ ko, en }` 원본)를 **보존**하고(모두 내부 필드 · 응답에 추가하지 않음), **검색에는 keyword 계열 전체의 합집합(`keywords` ∪ `keywordsKo` ∪ `meshTerms` ∪ `kciKeywords.ko` ∪ `kciKeywords.en`, 중복 제거)을 사용**하며 **표시용 선택 규칙과 검색 범위를 분리**한다. KCI keyword에는 **별도 번역 과정을 두지 않는다**. keyword 관련 배열은 **항상 존재하는 배열이며 빈 값은 `[]`**(`null`·생략 금지, `kciKeywords.ko`/`.en`도 항상 유지)이다. **KCI 수집은 완료되었고, KCI 원본이 그 언어의 keyword를 제공하지 않으면 `[]`가 정상**이다(특히 `.ko`). **`keywords` 배열의 정렬 규칙은 아직 미정이다** (5장 미확정 6번) | 1-1, 2장 검색 대상 필드, 4장, 5장 |
 | 3 | **논문 원문 링크 조립 규칙 확정** — KCI URL 형식 확정. **URL 문자열은 데이터·응답에 저장하지 않고** 프론트가 `pmid` / `kciId`로 조립한다. **`pmid`가 있으면 PubMed, 없고 `kciId`만 있으면 KCI** 링크를 쓴다 (버튼 선택 규칙일 뿐, 응답은 두 식별자를 모두 담는다) | 1-2, 3장 |
 | 4 | **`latestPaper` 후보 조건 확정** — featured 선정용 내부 필드 `latestPaper`는 **`pmid`가 있고(PubMed 논문) `publishedAt`도 확보된 논문만** 대상으로 산정한다. KCI-only 논문(`pmid`가 `null`)과 **완전한 `YYYY-MM-DD`를 확보하지 못한 논문**(연도-only·연월-only 포함 · `01` 보정 금지)은 제외되며, 조건을 만족하는 논문이 없는 교수는 featured 후보에서 제외된다. 대표 논문 `papers`의 포함 범위는 종전대로 유지된다 | 2장 API ③ |
 | 5 | **`latestPaper` 내부 스키마 정의** — `pmid` + `publishedAt`을 담은 object, **후보 조건(`pmid` 있음 + `publishedAt` 있음)을 만족하는 논문이 하나도 없으면 `null`**. featured 정렬 기준은 `latestPaper.publishedAt`. **내부 필드이므로 API ③ 응답에는 포함하지 않는다** | 2장 API ③ |
@@ -42,7 +42,7 @@
 > **v6.5에서 응답 스키마가 바뀌는 항목은 없습니다.** 논문 식별자는 v6.4와 동일한 `pmid` / `kciId` 구조를 유지하고, `keywords`도 필드 이름·타입 그대로입니다.
 > 다만 `papers[].pmid` · `papers[].kciId`는 **각각 nullable**이며 필수 조건은 **둘 중 최소 하나**입니다 — **KCI-only 논문의 `pmid = null`은 정상 상태**이므로, **백엔드 스키마가 `pmid`를 필수 문자열로 두고 있다면 계약에 맞춰 정합화가 필요합니다** (구현 TODO · 1-2).
 > 4·5·6번은 백엔드·데이터 파이프라인 내부 규칙입니다 — `latestPaper`는 종전과 같이 응답에 포함되지 않습니다.
-> 2번도 **응답 필드가 늘어나지 않습니다** — `meshTerms`·`meshTermsKo`·`kciKeywords`는 `professors.json` 내부 보존·검색용이고, 응답에 나가는 키워드 필드는 종전대로 최종 `keywords` 하나뿐입니다. 다만 그 배열을 **무엇으로 채우는지**와 **검색이 어떤 필드를 훑는지**가 바뀌므로 **데이터 파이프라인·백엔드 검색 로직 수정이 필요합니다.**
+> 2번도 **응답 필드가 늘어나지 않습니다** — `keywordsKo`·`meshTerms`·`kciKeywords`는 `professors.json` 내부 보존·검색용이고, 응답에 나가는 키워드 필드는 종전대로 최종 `keywords` 하나뿐입니다. 다만 그 배열을 **무엇으로 채우는지**와 **검색이 어떤 필드를 훑는지**가 바뀌므로 **데이터 파이프라인·백엔드 검색 로직 수정이 필요합니다.**
 > 1·3번(화면 노출·링크 조립)은 **프론트 구현 사항**이며 백엔드 응답 수정이 필요하지 않습니다.
 
 ### v6.3 → v6.4
@@ -167,7 +167,7 @@ meshTerms [] + kciKeywords.en []           → keywords: []
 ```
 
 - **이 세 필드는 항상 존재하는 배열이므로**(아래 배열 규칙), 판정은 **`[]`인지 아닌지**만 보면 된다
-- **`kciKeywords.ko`와 `meshTermsKo`는 이 fallback에 사용하지 않는다.** 두 필드는 한글 검색을 위한 내부 데이터이며, 최종 표시용 `keywords`는 영문 배열이다
+- **`kciKeywords.ko`와 `keywordsKo`는 이 fallback에 사용하지 않는다.** 두 필드는 한글 검색을 위한 내부 데이터이며, 최종 표시용 `keywords`는 영문 배열이다. **`keywordsKo`는 이 fallback이 끝난 뒤 최종 `keywords`를 한글화해 만드는 값**이므로 입력이 아니라 결과다 (아래)
 - **최종 `keywords`는 영문 배열이다 (v6.5 확정).** MeSH를 쓰면 영문 MeSH 용어이고(예: `"Heart Failure"`), MeSH가 없어 KCI로 fallback할 때에도 **KCI가 제공한 영문 keyword(`kciKeywords.en`)를 사용한다**. 한글 원본은 `keywords`에 넣지 않고 내부 필드에 보존한다 (아래)
 - **백엔드는 최종 `keywords` 전체 배열을 응답에 담는다.** 개수를 잘라서 보내지 않는다
 - **화면 표시에는 `keywords`만 사용한다.** 화면에 몇 개를 보여주는지는 아래 화면 표시 정책을 따른다
@@ -184,7 +184,7 @@ meshTerms [] + kciKeywords.en []           → keywords: []
 {
   "keywords": ["Heart Failure", "Cardiac Imaging"],
   "meshTerms": ["Heart Failure", "Cardiac Imaging"],
-  "meshTermsKo": ["심부전", "심장 영상"],
+  "keywordsKo": ["심부전", "심장 영상"],
   "kciKeywords": {
     "ko": ["심부전", "심장영상"],
     "en": ["Heart Failure", "Cardiac Imaging"]
@@ -196,13 +196,38 @@ meshTerms [] + kciKeywords.en []           → keywords: []
 | --- | --- | --- | --- | --- |
 | `keywords` | `string[]` | `[]` | **포함** | API 응답·화면 표시용 **최종 영문** keyword 배열. 위 우선순위로 만든다 |
 | `meshTerms` | `string[]` | `[]` | **미포함 (내부)** | PubMed/MeSH에서 수집한 **원본 영문** terms |
-| `meshTermsKo` | `string[]` | `[]` | **미포함 (내부)** | `meshTerms`를 **한글화한 결과**. 원본 MeSH와 분리 보존하며 **검색용 내부 필드**다 |
+| `keywordsKo` | `string[]` | `[]` | **미포함 (내부)** | **최종 `keywords`를 한글화한 결과**. 한글 검색을 위한 **검색용 내부 필드**다 |
 | `kciKeywords` | `{ "ko": string[], "en": string[] }` | 각 배열이 `[]` | **미포함 (내부)** | KCI가 제공한 **원본** keyword. 한글과 영문을 **출처별로 구분해** 보존한다 |
 
 - **`kciKeywords`는 단순 문자열 배열이 아니라 `{ ko, en }` 구조다.** `kciKeywords.ko`는 KCI가 제공한 원본 한글 keyword, `kciKeywords.en`은 KCI가 제공한 원본 영문 keyword다
-- **`kciKeywords.ko`와 `meshTermsKo`를 하나의 한글 배열로 합치지 않는다.** `kciKeywords.ko`는 **논문 저자·학술지 쪽에서 제공한 원본**이고 `meshTermsKo`는 **MeSH를 별도로 한글화한 결과**로, 출처와 성격이 다르다. 출처를 추적할 수 있도록 **별도 필드로 유지한다**
-- **`meshTermsKo`는 API 응답에 포함하지 않고 화면에도 직접 표시하지 않는다.** 검색을 위한 내부 필드다
-- MeSH를 한글화하는 **스크립트의 구체적인 구현 방식은 이 데이터 계약의 범위 밖이다** — 이 계약이 정하는 것은 결과를 `meshTermsKo`에 분리 보존한다는 점까지다
+**`keywordsKo` — 최종 `keywords`를 한글화한 검색용 필드 (v6.5 확정)**
+
+- **번역 입력은 `meshTerms`가 아니라 fallback 선택이 끝난 최종 `keywords`다.** 관계는 다음과 같다.
+
+```text
+원본 수집(meshTerms · kciKeywords) → 최종 영문 keywords 선택 → keywordsKo 생성(한글화)
+```
+
+- 입력: **최종 `keywords`** / 출력: **`keywordsKo`** / 용도: **내부 한글 검색** / **API 미응답**
+- **`keywordsKo`는 API 응답에 포함하지 않고 화면에도 직접 표시하지 않는다.** 검색을 위한 내부 필드다
+- 한글화의 **구체적인 기계번역 모델·번역 API·스크립트 구현 방식은 이 데이터 계약의 범위 밖이다** — 이 계약이 정하는 것은 **입력·출력·용도·API 미응답**까지다
+
+> **왜 `meshTerms`가 아니라 `keywords`를 번역하는가 (v6.5 변경 — 기존 `meshTermsKo` 방식을 대체)**
+>
+> 종전 방식(`meshTerms`만 한글화)은 **MeSH가 있는 교수에게만 한글 검색 데이터를 만들 수 있었다.** MeSH가 없는 교수는 `kciKeywords.en`이 최종 `keywords`가 되는데, 그 경우 한글 검색 대응값이 생기지 않는다.
+>
+> **최종 `keywords` 자체를 한글화하면 출처가 MeSH든 KCI 영문이든 관계없이 동일한 흐름으로 한글 검색 데이터를 만들 수 있고**, 번역 입력도 `keywords` 하나로 통일되어 데이터 파이프라인이 단순해진다.
+>
+> `keywordsKo`는 **KCI 원본 한글 keyword를 대체하는 필드가 아니다.** KCI 원본 한글은 제공 비율이 낮아 `kciKeywords.ko`만으로는 한글 검색 커버리지를 확보할 수 없으므로(아래 KCI 수집 결과 참고), `keywordsKo`는 **커버리지를 안정적으로 확보하기 위한 별도의 번역 필드**다.
+
+**`keywordsKo`와 `kciKeywords.ko`의 차이 — 둘 다 한글이지만 성격이 다르다**
+
+| 필드 | 성격 | 출처 |
+| --- | --- | --- |
+| `keywordsKo` | **번역·가공 데이터** | 최종 영문 `keywords`를 한글화한 결과. **원문 출처 keyword가 아니다** |
+| `kciKeywords.ko` | **원본 데이터** | KCI가 직접 제공한 원본 한글 keyword. **번역 결과가 아니다** |
+
+- **두 배열을 하나의 내부 필드로 합치지 않는다.** 검색에는 둘 다 활용하지만, **데이터 출처를 추적할 수 있도록 별도 필드로 보존한다**
 
 **배열형 keyword 필드는 항상 배열이다 — 빈 값은 `[]` (v6.5 확정)**
 
@@ -211,11 +236,11 @@ meshTerms [] + kciKeywords.en []           → keywords: []
 | 값이 없을 때 | 표현 |
 | --- | --- |
 | **값의 부재가 허용되는(nullable) 스칼라 필드** (`email` · `homepageUrl` · `profileImageUrl` · `matchScore` 등) | **`null`** |
-| **배열 필드** (`keywords` · `meshTerms` · `meshTermsKo` · `kciKeywords.ko` · `kciKeywords.en` · `specialties` · `papers` 등) | **`[]`** |
+| **배열 필드** (`keywords` · `keywordsKo` · `meshTerms` · `kciKeywords.ko` · `kciKeywords.en` · `specialties` · `papers` 등) | **`[]`** |
 
 `id` · `name` 처럼 **값이 반드시 있어야 하는 스칼라 필드는 `null`을 허용하지 않는다** — 위 `null` 규칙은 4장 표에 nullable로 명시된 필드에만 적용된다.
 
-위 keyword 관련 배열 다섯 개(`keywords` · `meshTerms` · `meshTermsKo` · `kciKeywords.ko` · `kciKeywords.en`)에는 **예외 없이** 다음이 적용된다.
+위 keyword 관련 배열 다섯 개(`keywords` · `keywordsKo` · `meshTerms` · `kciKeywords.ko` · `kciKeywords.en`)에는 **예외 없이** 다음이 적용된다.
 
 - **항상 필드가 존재한다.** 값이 없다는 이유로 필드를 **생략하지 않는다**
 - **항상 배열이다.** 값이 없어도 타입이 바뀌지 않는다
@@ -249,8 +274,8 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 ```json
 {
   "keywords": [],
+  "keywordsKo": [],
   "meshTerms": [],
-  "meshTermsKo": [],
   "kciKeywords": {
     "ko": [],
     "en": []
@@ -258,13 +283,22 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 }
 ```
 
-> **참고 — 현재 KCI keyword 수집 진행 중 (데이터 구축 단계의 상태)**
+> **참고 — KCI keyword 수집 완료 (v6.5) · `[]`의 의미**
 >
-> KCI keyword 수집은 **아직 진행 중**이다. **수집이 완료되기 전까지는 전체 교수 데이터에서 `kciKeywords.ko` · `kciKeywords.en`이 모두 `[]`다** — 일부 교수만 비어 있는 것이 아니라 **현재는 전원이 `[]`인 상태**다. (필드 구조는 위 규칙대로 항상 존재한다)
+> KCI keyword 수집은 **완료되었다.** 따라서 `kciKeywords.ko` · `kciKeywords.en`의 `[]`는 **"아직 수집 전"이라는 뜻이 아니라, 그 언어의 KCI 원본 keyword를 확보하지 못했다는 뜻**이다.
 >
-> 따라서 **현재 구축 단계의 `[]`만 보고 그 교수에게 실제 KCI keyword가 없다고 단정할 수 없다.** 지금의 `[]`는 대부분 **아직 수집 전**이라는 뜻이다.
+> - KCI 원본에서 그 언어의 keyword를 **확보한 경우 → 배열에 저장**
+> - KCI 원본이 그 언어의 keyword를 **제공하지 않는 경우 → `[]`**
 >
-> **장기 계약에서 `[]`의 의미는 "현재 저장된 값이 없음"이며**, 지금은 그 원인이 "아직 수집 전"이다. **수집이 완료되면 실제 KCI 수집 결과가 내부 필드에 반영되고**, 그 뒤부터 `[]`는 "그 언어의 KCI keyword가 실제로 없음"을 뜻하게 된다.
+> **수집이 정상적으로 완료된 뒤에도 `kciKeywords.ko = []`인 레코드가 다수 존재하는 것이 정상이다.** 한국어 논문이라 하더라도 KCI가 한글 keyword를 반드시 제공하지는 않기 때문이다. **"수집이 끝나면 `kciKeywords.ko`가 전부 채워질 것"이라고 기대하면 안 된다.**
+>
+> **`kciKeywords.en`도 모든 레코드에서 값이 존재한다고 계약하지 않는다.** 확보하지 못하면 마찬가지로 `[]`다.
+>
+> *현 데이터셋 실측(참고값 · 계약 보장값 아님)*: `kciKeywords.en`은 약 **92.3%**, `kciKeywords.ko`는 약 **20.3%**에서 값이 확보되었다. 한국어 논문 1,136편 중 687편이 **영문 keyword만** 제공하는 사례도 확인되었다. **이 수치는 현재 수집 결과를 설명하는 시점성 참고값이며, 향후 데이터가 같은 비율을 유지해야 한다는 계약 조건이 아니다.**
+>
+> 계약상 유효한 규칙은 **① 필드는 항상 존재 ② 타입은 항상 `string[]` ③ 원본 값이 없으면 `[]`** 세 가지다 (위 배열 규칙).
+>
+> 한편 KCI 원본 한글 keyword의 제공 비율이 낮아 **`kciKeywords.ko`만으로는 한글 검색을 보완할 수 없으므로**, 한글 검색 커버리지는 최종 `keywords`를 한글화한 **`keywordsKo`** 로 확보한다 (위 참고).
 >
 > 이 사항은 **API 응답 스키마 변경을 의미하지 않는다.** `kciKeywords`는 종전대로 내부 필드이며 응답에 나가지 않고, **프론트는 `kciKeywords`를 직접 사용하지 않는다.**
 
@@ -277,15 +311,15 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 
 ```text
 검색 대상 keyword 계열
-  = keywords ∪ meshTerms ∪ meshTermsKo ∪ kciKeywords.ko ∪ kciKeywords.en
+  = keywords ∪ keywordsKo ∪ meshTerms ∪ kciKeywords.ko ∪ kciKeywords.en
     (합친 뒤 중복 제거)
 ```
 
 | 필드 | 검색에서의 역할 |
 | --- | --- |
 | `keywords` | 화면·API용 **대표 영문** keyword 매칭 |
+| `keywordsKo` | 최종 `keywords`의 **한글 검색 대응값** — 출처가 MeSH든 KCI 영문이든 동일하게 한글 검색을 지원한다 |
 | `meshTerms` | PubMed/MeSH **원본 영문** terms 매칭 |
-| `meshTermsKo` | MeSH 기반 교수의 **한글 검색** 지원 |
 | `kciKeywords.ko` | KCI가 제공한 **원본 한글** keyword 검색 지원 |
 | `kciKeywords.en` | KCI가 제공한 **원본 영문** keyword 검색 지원 |
 
@@ -294,7 +328,7 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 - **표시용 `keywords` 선택 규칙이 나중에 바뀌더라도 검색 가능 범위가 불필요하게 줄어들지 않는다.** 검색은 표시 규칙의 결과가 아니라 보존된 원본 전체를 본다
 - **중복 제거의 세부 방식(대소문자·띄어쓰기·문장부호 정규화, stemming, 형태소 분석, 동의어 병합, 대표값 선택 등)은 이 계약에서 새로 정하지 않는다.** 이 계약이 정하는 것은 **"합친 뒤 중복을 제거한다"** 까지다. 한글 검색어와 영문 값 사이의 별칭 처리는 여전히 별도의 미확정 항목이다 (5장 미확정 3번)
 - **프론트는 이 내부 검색 구조를 알 필요가 없다.** 프론트가 받는 것은 `keywords` 하나뿐이다
-- **검색에 다섯 필드를 쓰더라도 API 응답 필드에 `meshTerms`·`meshTermsKo`·`kciKeywords`(및 `.ko`/`.en`)를 추가하지 않는다.** 이번 결정은 **프론트 ↔ 백엔드 API 응답 스키마 변경이 아니다**
+- **검색에 다섯 필드를 쓰더라도 API 응답 필드에 `keywordsKo`·`meshTerms`·`kciKeywords`(및 `.ko`/`.en`)를 추가하지 않는다.** 이번 결정은 **프론트 ↔ 백엔드 API 응답 스키마 변경이 아니다**
 
 **KCI keywords 번역 정책 (v6.5 확정)**
 
@@ -473,7 +507,7 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 - **동일 교수의 `papers` 배열에 같은 논문을 두 번 저장하지 않는다.** 병합 결과는 한 건이다
 - 대표 논문 3편 선정의 인용수 기준: **국제 인용수(OpenAlex) 우선, 없으면 KCI 피인용수**
 - 초록은 영문(PubMed)과 한글(KCI)을 내부 데이터로 함께 보존한다 (검색 매칭에 활용)
-- **키워드도 출처별로 분리 보존한다 (v6.5)** — PubMed/MeSH 원본은 `meshTerms`, 그 한글화 결과는 `meshTermsKo`, KCI 원본은 `kciKeywords.ko` / `kciKeywords.en`에 담고, 최종 `keywords`는 **MeSH 우선 → 없으면 `kciKeywords.en`** 규칙으로 만든다 (1-1). `meshTerms`·`meshTermsKo`·`kciKeywords`는 내부 데이터 전용이며 응답에 나가지 않는다
+- **키워드도 출처별로 분리 보존한다 (v6.5)** — PubMed/MeSH 원본은 `meshTerms`, KCI 원본은 `kciKeywords.ko` / `kciKeywords.en`에 담고, 최종 `keywords`는 **MeSH 우선 → 없으면 `kciKeywords.en`** 규칙으로 만든 뒤 그 결과를 한글화해 `keywordsKo`에 담는다 (1-1). `keywordsKo`·`meshTerms`·`kciKeywords`는 내부 데이터 전용이며 응답에 나가지 않는다
 
 #### 동일 논문의 복수 교수 귀속 (v6.5 신설)
 
@@ -580,7 +614,7 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 - **요청 구조 변경 없음** — `query` · `filters` · `sort` · `minScore` · `page` · `pageSize` 그대로
 - **응답 필드 구조 변경 없음** — 교수 상세(API ②)의 `papers` 식별자도 **v6.4와 같은 `pmid` / `kciId` 두 필드를 유지한다** (원칙 1 · 1-2)
 - `keywords`는 **필드 이름·타입 모두 그대로**다. 배열을 채우는 규칙(MeSH 우선 → KCI fallback → `[]`)만 v6.5에서 확정되었다 (1-1)
-- `latestPaper`·`meshTerms`·`meshTermsKo`·`kciKeywords`는 **내부 필드이므로 어떤 응답에도 포함되지 않는다** (검색에는 사용된다 · 1-1)
+- `latestPaper`·`keywordsKo`·`meshTerms`·`kciKeywords`는 **내부 필드이므로 어떤 응답에도 포함되지 않는다** (keyword 계열은 검색에는 사용된다 · 1-1)
 - 즉 **v6.5에서 바뀐 것은 응답의 모양이 아니라, 응답 값을 만드는 정책과 프론트의 표시·링크 규칙이다**
 
 | 계약 | 경로 | 프론트 함수 |
@@ -648,24 +682,24 @@ keyword를 하나도 확보하지 못한 교수의 내부 구조 (**필드는 �
 
 ```text
 검색 대상 keyword 계열
-  = keywords ∪ meshTerms ∪ meshTermsKo ∪ kciKeywords.ko ∪ kciKeywords.en
+  = keywords ∪ keywordsKo ∪ meshTerms ∪ kciKeywords.ko ∪ kciKeywords.en
     (합친 뒤 중복 제거)
 ```
 
 | 필드 | 검색에서의 역할 | API 응답 |
 | --- | --- | --- |
 | `keywords` | 화면·API용 **대표 영문** keyword 매칭 | **포함** |
+| `keywordsKo` | 최종 `keywords`의 **한글 검색 대응값** | 미포함 (내부) |
 | `meshTerms` | PubMed/MeSH **원본 영문** terms 매칭 | 미포함 (내부) |
-| `meshTermsKo` | MeSH 기반 교수의 **한글 검색** 지원 | 미포함 (내부) |
 | `kciKeywords.ko` | KCI가 제공한 **원본 한글** keyword 검색 지원 | 미포함 (내부) |
 | `kciKeywords.en` | KCI가 제공한 **원본 영문** keyword 검색 지원 | 미포함 (내부) |
 
 - 다섯 필드 모두 `professors.json` 내부에 있으며, 백엔드가 이 파일을 읽어 검색한다 (1-1 · 7장)
 - **표시용 `keywords` 선택 규칙과 검색 범위는 분리되어 있다** — 표시용은 `meshTerms`/`kciKeywords.en` 중 하나를 고르지만, 검색은 **다섯 필드를 모두 합쳐** 쓴다 (1-1)
-- **프론트는 이 내부 검색 구조를 알 필요가 없다.** 응답으로 받는 keyword 필드는 `keywords` 하나뿐이고, **API 응답에 `meshTerms`·`meshTermsKo`·`kciKeywords`를 추가하지 않는다**
+- **프론트는 이 내부 검색 구조를 알 필요가 없다.** 응답으로 받는 keyword 필드는 `keywords` 하나뿐이고, **API 응답에 `keywordsKo`·`meshTerms`·`kciKeywords`를 추가하지 않는다**
 
 > ⚠️ 논문 초록 검색은 v6.2에서 계약으로 확정한 사항이며, 백엔드 검색 로직 반영이 필요하다.
-> ⚠️ 논문 제목·초록은 대체로 **영문**인데 검색어는 한글인 경우가 많다. `keywords`도 **최종 영문 배열**이다 (1-1). keyword 쪽 간극은 위 내부 한글 필드(`meshTermsKo` · `kciKeywords.ko`)가 메우고, 제목·초록 쪽 간극은 5장의 **검색어 별칭 규칙**으로 해결한다.
+> ⚠️ 논문 제목·초록은 대체로 **영문**인데 검색어는 한글인 경우가 많다. `keywords`도 **최종 영문 배열**이다 (1-1). keyword 쪽 간극은 위 내부 한글 필드(`keywordsKo` · `kciKeywords.ko`)가 메우고, 제목·초록 쪽 간극은 5장의 **검색어 별칭 규칙**으로 해결한다.
 > ⚠️ 검색 매칭에는 **전체 `keywords`**를 쓴다. 카드에 4개만 보인다고 해서 매칭 대상이 줄어드는 것이 아니다 (v6.5 · 1-1).
 
 #### 정렬 규칙
@@ -884,7 +918,7 @@ PubMed 원본의 발행일 정보는 **연도까지만**, 또는 **연·월까�
 
 - **모든 스칼라 필드가 `null`이 될 수 있다는 뜻이 아니다.** `id` · `name` 같은 **필수 스칼라 필드는 항상 값이 있어야 하며** `null`을 허용하지 않는다. 위 규칙은 **아래 표에 `null`로 명시된 nullable 필드**에 적용된다
 - 배열 필드는 **값이 없어도 `null`로 보내지 않고, 필드를 생략하지도 않는다.** 항상 배열 타입을 유지한다
-- 이는 일부 필드에만 적용되는 예외가 아니라 **이 계약에서 값의 부재를 표현하는 기본 원칙**이다. 내부 keyword 배열(`meshTerms` · `meshTermsKo` · `kciKeywords.ko` · `kciKeywords.en`)에도 동일하게 적용된다 (1-1)
+- 이는 일부 필드에만 적용되는 예외가 아니라 **이 계약에서 값의 부재를 표현하는 기본 원칙**이다. 내부 keyword 배열(`keywordsKo` · `meshTerms` · `kciKeywords.ko` · `kciKeywords.en`)에도 동일하게 적용된다 (1-1)
 
 | 필드 | 값이 없을 때 | 화면 표시 |
 | --- | --- | --- |
@@ -897,14 +931,14 @@ PubMed 원본의 발행일 정보는 **연도까지만**, 또는 **연·월까�
 | `papers[].pmid` · `papers[].kciId` **동시** | **둘 다 `null`인 논문은 응답에 넣지 않는다** — 둘 중 최소 하나는 반드시 존재 (원칙 1) | 링크 버튼 미렌더링 (3장) |
 | `specialties` | `[]` | 해당 영역 표시 생략 |
 | `keywords` | `[]` — **`null`이나 필드 생략을 쓰지 않는다.** `meshTerms`와 `kciKeywords.en`이 **모두** 비었을 때 `[]`가 된다 (1-1) | **해당 키워드 영역 표시 생략 — 카드·상세 공통 (v6.5)** |
-| `meshTerms` · `meshTermsKo` · `kciKeywords.ko` · `kciKeywords.en` (**내부 필드**) | 각각 `[]` — **항상 필드가 존재하고 항상 배열이며, `null`·생략을 쓰지 않는다** (1-1) | 응답에 나가지 않으므로 화면 표시 없음 |
+| `keywordsKo` · `meshTerms` · `kciKeywords.ko` · `kciKeywords.en` (**내부 필드**) | 각각 `[]` — **항상 필드가 존재하고 항상 배열이며, `null`·생략을 쓰지 않는다** (1-1) | 응답에 나가지 않으므로 화면 표시 없음 |
 | `matchScore` | `null` (빈 검색어 · featured) | 점수 미표시 |
 | 검색 결과 | `results: []`, `total: 0` | "검색 결과가 없습니다" |
 | featured 결과 | 유효 후보가 3명 미만이면 있는 만큼만 | 받은 개수만큼 표시 |
 
 > `labName` 행은 v6.4에서 삭제되었다 (필드 자체 제거).
 
-**참고 — 데이터가 거의 비어 있는 교수**: 의대 명단에만 있는 교수(주로 기초의학)는 병원 프로필이 없어 `profileImageUrl`·`specialties`가 비어 있다. 논문은 KCI 등 후속 수집으로 보완될 수 있으며, `keywords`는 **`meshTerms` 우선 → 비어 있으면 `kciKeywords.en` → 둘 다 비어 있으면 `[]`** 규칙으로 채워진다 (v6.5 확정 · 1-1). 따라서 PubMed 논문이 없어 MeSH를 확보하지 못한 교수라도 KCI 영문 keyword가 있으면 `keywords`가 비지 않는다. **다만 KCI keyword 수집이 진행 중이라 현재는 전체 교수의 `kciKeywords`가 `[]`이며, 이 fallback은 수집 완료 후에 실제로 동작한다** (1-1 참고). 카드에 이름·구분·소속만 표시되는 경우가 있으므로 프론트는 이 상태에서도 레이아웃이 깨지지 않아야 한다.
+**참고 — 데이터가 거의 비어 있는 교수**: 의대 명단에만 있는 교수(주로 기초의학)는 병원 프로필이 없어 `profileImageUrl`·`specialties`가 비어 있다. 논문은 KCI 등 후속 수집으로 보완될 수 있으며, `keywords`는 **`meshTerms` 우선 → 비어 있으면 `kciKeywords.en` → 둘 다 비어 있으면 `[]`** 규칙으로 채워진다 (v6.5 확정 · 1-1). 따라서 PubMed 논문이 없어 MeSH를 확보하지 못한 교수라도 KCI 영문 keyword가 있으면 `keywords`가 비지 않는다. **KCI keyword 수집은 완료되었으며, `kciKeywords.en`을 확보하지 못한 교수는 이 fallback에서도 `keywords`가 `[]`로 남는다** (1-1 참고). 카드에 이름·구분·소속만 표시되는 경우가 있으므로 프론트는 이 상태에서도 레이아웃이 깨지지 않아야 한다.
 
 ---
 
@@ -945,8 +979,8 @@ PubMed 원본의 발행일 정보는 **연도까지만**, 또는 **연·월까�
 
 | 항목 | 결정 |
 | --- | --- |
-| `keywords` 데이터 선택 정책 (구 "MeSH 미확보 교수의 `keywords` 보완 정책" · 구 "KCI keywords 한글/영문 선택 및 배열 구성 규칙") | **확정 (v6.5)** — 최종 API/표시용 `keywords`는 **영문 배열**이며 **① `meshTerms`가 있으면 `meshTerms` → ② 없으면 `kciKeywords.en` → ③ 둘 다 없으면 `[]`**. `professors.json` 내부에는 **`meshTerms`(PubMed/MeSH 원본 영문) · `meshTermsKo`(MeSH 한글화 결과) · `kciKeywords`(`{ ko, en }` 원본)** 를 출처별로 분리 보존한다(모두 내부 필드 · 응답에 추가하지 않음). **검색에는 keyword 계열 전체의 합집합(`keywords` ∪ `meshTerms` ∪ `meshTermsKo` ∪ `kciKeywords.ko` ∪ `kciKeywords.en`, 중복 제거)** 을 사용하고(**표시용 선택 규칙과 검색 범위는 분리**), **API 응답에는 `keywords`만** 제공한다. **KCI keyword에 별도 번역(AI·KMLE) 과정을 두지 않는다.** 화면은 **카드 앞 4개 + `+N`**, **상세 전체**, **`[]`이면 영역 숨김** (1-1 · 2장 검색 대상 필드) |
-| `keywords` 값의 언어 | **확정 (v6.5)** — 최종 `keywords`는 **영문**이다. MeSH를 쓰면 영문 MeSH 용어, MeSH가 없으면 **`kciKeywords.en`(KCI 원본 영문)** 을 쓴다. 한글 원본(`kciKeywords.ko`)과 MeSH 한글화 결과(`meshTermsKo`)는 **`keywords`에 넣지 않고 내부 검색용으로만 보존**한다 (1-1) |
+| `keywords` 데이터 선택 정책 (구 "MeSH 미확보 교수의 `keywords` 보완 정책" · 구 "KCI keywords 한글/영문 선택 및 배열 구성 규칙") | **확정 (v6.5)** — 최종 API/표시용 `keywords`는 **영문 배열**이며 **① `meshTerms`가 있으면 `meshTerms` → ② 없으면 `kciKeywords.en` → ③ 둘 다 없으면 `[]`**. `professors.json` 내부에는 **`keywordsKo`(최종 `keywords`를 한글화한 한글 검색용 필드) · `meshTerms`(PubMed/MeSH 원본 영문) · `kciKeywords`(`{ ko, en }` 원본)** 를 보존한다(모두 내부 필드 · 응답에 추가하지 않음). **검색에는 keyword 계열 전체의 합집합(`keywords` ∪ `keywordsKo` ∪ `meshTerms` ∪ `kciKeywords.ko` ∪ `kciKeywords.en`, 중복 제거)** 을 사용하고(**표시용 선택 규칙과 검색 범위는 분리**), **API 응답에는 `keywords`만** 제공한다. **KCI 원본 `ko`/`en`은 원본이 없으면 `[]`이며, 수집이 완료된 현재도 `.ko = []`인 레코드가 다수 있는 것이 정상이다.** **KCI keyword에 별도 번역(AI·KMLE) 과정을 두지 않는다.** 화면은 **카드 앞 4개 + `+N`**, **상세 전체**, **`[]`이면 영역 숨김** (1-1 · 2장 검색 대상 필드) |
+| `keywords` 값의 언어 | **확정 (v6.5)** — 최종 `keywords`는 **영문**이다. MeSH를 쓰면 영문 MeSH 용어, MeSH가 없으면 **`kciKeywords.en`(KCI 원본 영문)** 을 쓴다. 한글 원본(`kciKeywords.ko`)과 최종 `keywords`의 한글화 결과(`keywordsKo`)는 **`keywords`에 넣지 않고 내부 검색용으로만 보존**한다 (1-1) |
 | `keywords` 화면 노출 | **확정 (v6.5)** — 교수 카드는 앞 4개 + 초과분 `+N`, 교수 상세는 전체 표시, `[]`이면 해당 영역 숨김. 프론트는 **응답 순서를 그대로 사용하고 재정렬하지 않는다**. v6.4의 "미표시"를 대체 (1-1) |
 | `keywords` 배열의 내부 정렬 순서 | **미확정** → 5장 미확정 6번. 백엔드/조립기가 정하며, **프론트는 응답 순서를 그대로 사용하고 재정렬하지 않는다**(이 부분은 확정). 배열의 순서는 카드에 노출되는 앞 4개를 결정하므로, 순서가 바뀌면 화면에 보이는 keyword도 함께 달라진다 (1-1) |
 | 논문 식별자 응답 구조 | **확정 (v6.4 도입 · v6.5 유지)** — `papers[].pmid` / `papers[].kciId` **두 필드, 각각 `string \| null`(nullable)**. 필수 조건은 특정 필드가 아니라 **`pmid`/`kciId` 중 최소 하나 non-null**이며, **둘 다 존재할 수 있고**, 둘 다 `null`인 논문은 응답에 넣지 않는다. **KCI-only 논문의 `pmid = null`은 정상 상태**다. PubMed·KCI 동일 논문 병합 시 **두 식별자를 모두 보존해 응답에도 둘 다 담는다**. ⚠️ **백엔드 스키마가 `pmid`를 필수 문자열로 두고 있다면 계약에 맞춰 정합화가 필요하다**(구현 TODO · 미정 항목 아님 · 1-2) (원칙 1 · 1-2) |
@@ -964,7 +998,7 @@ PubMed 원본의 발행일 정보는 **연도까지만**, 또는 **연·월까�
 | featured 선정용 `latestPaper` 후보 조건 | **확정 (v6.5)** — 후보가 되려면 **`pmid`가 있고(PubMed 논문) `publishedAt`도 확보**되어야 한다. `pmid`가 `null`이고 `kciId`만 있는 KCI-only 논문은 제외하고(`pmid`·`kciId`를 모두 가진 논문은 **후보에 포함**), **`pmid`는 있지만 `publishedAt`이 없는 논문도 제외**한다. **후보 조건을 만족하는 논문이 하나도 없는 교수**(PubMed 논문이 없는 경우 + PubMed 논문은 있어도 `publishedAt`을 모두 확보하지 못한 경우)는 `latestPaper = null`이며 featured 후보에서 제외. `papers`의 포함 범위와는 별개다 (2장 API ③) |
 | `latestPaper` 내부 스키마 | **확정 (v6.5)** — `{ "pmid": string, "publishedAt": string }` 또는 **`null`**. 후보 조건을 만족하는 논문이 있을 때만 object를 만들고, 하나도 없으면 `null`. featured 정렬은 `latestPaper.publishedAt` 기준 (2장 API ③) |
 | `latestPaper.publishedAt` 포맷 (구 "포맷 및 날짜 비교·정규화 규칙") | **확정 (v6.5)** — 타입 `string`, 형식 **`YYYY-MM-DD`**. **조립 단계에서 이 형식으로 보장한다** (PubMed 원본이 항상 이 형식이라는 뜻이 아니라, 조립기가 `latestPaper`를 만들 때 보장하는 계약이다). featured 정렬은 이 값 기준이며, 값들의 **날짜 정밀도가 동일하므로 부분 날짜 비교·정규화 규칙은 별도로 필요하지 않다.** 이는 **값이 존재할 때의 형식** 보장이며, `publishedAt`을 확보하지 못한 논문은 종전대로 후보에서 제외된다 (2장 API ③) |
-| 검색 대상 필드 | 확정 (v6.2 · **범위는 v6.5에서 확정**) — 교수명 · **keyword 계열** · specialties · 논문 제목 · 초록 · department. **keyword 계열은 `keywords` ∪ `meshTerms` ∪ `meshTermsKo` ∪ `kciKeywords.ko` ∪ `kciKeywords.en` 전체의 합집합(중복 제거)** 이며, **표시용 `keywords` 선택 규칙과는 분리된다** (1-1 · 2장 검색 대상 필드) |
+| 검색 대상 필드 | 확정 (v6.2 · **범위는 v6.5에서 확정**) — 교수명 · **keyword 계열** · specialties · 논문 제목 · 초록 · department. **keyword 계열은 `keywords` ∪ `keywordsKo` ∪ `meshTerms` ∪ `kciKeywords.ko` ∪ `kciKeywords.en` 전체의 합집합(중복 제거)** 이며, **표시용 `keywords` 선택 규칙과는 분리된다** (1-1 · 2장 검색 대상 필드) |
 | API ① HTTP 경로·메서드 | 확정 (v6.2) — `POST /api/professors/search` |
 | 로그인 기능 | 미구현 결정 — 찜은 localStorage |
 | 찜 목록 화면의 데이터 조회 | 확정 (v6.3) — API ① 재사용 |
