@@ -38,41 +38,8 @@ import ProfessorCard from '../components/ProfessorCard.jsx'
 import Pagination from '../components/Pagination.jsx'
 import '../styles/SearchResultPage.css'
 
-/**
- * 이 화면의 카드에 보여줄 연구 키워드 개수.
- *
- * 계약 1-1: "keywords 는 전체 배열을 보내고, 카드에는 프론트가 앞 3~4개만 노출"
- * 그중 이 화면은 3개로 통일합니다.
- *
- * ※ 프론트가 키워드의 중요도·관련도를 계산해서 고르는 것이 아닙니다.
- *   API 가 돌려준 배열의 순서를 그대로 두고 "표시 개수"만 앞에서 자릅니다.
- *   keywords 배열의 우선순위·정렬 기준은 추후 백엔드·검색엔진팀과 별도로 합의합니다.
- */
-const MAX_VISIBLE_KEYWORDS = 3
-
 /** MVP 정렬은 관련도순 하나뿐입니다. (계약 API ① — sort 는 'relevance' 고정) */
 const SORT = 'relevance'
-
-/**
- * 카드에 넘길 교수 객체를 만듭니다.
- *
- * 원본 객체를 건드리지 않고 복사본의 keywords 만 앞 3개로 줄입니다.
- * (원본을 잘라 버리면 같은 데이터를 쓰는 다른 화면까지 영향을 받습니다)
- * specialties 는 그대로 둡니다 — 전문 분야는 개수 제한 대상이 아닙니다.
- *
- * @param {object} professor 계약 1-1 교수 카드 객체
- * @returns {object} keywords 만 앞 3개로 줄인 복사본
- */
-function withVisibleKeywords(professor) {
-  // 값이 배열이 아니면(예상 밖의 응답) 손대지 않고 그대로 넘깁니다.
-  // 없는 값을 만들어 채우지 않기 위해서입니다. (계약 원칙 2)
-  if (!Array.isArray(professor.keywords)) return professor
-
-  return {
-    ...professor,
-    keywords: professor.keywords.slice(0, MAX_VISIBLE_KEYWORDS),
-  }
-}
 
 function SearchResultPage() {
   const navigate = useNavigate()
@@ -296,7 +263,7 @@ function SearchResultPage() {
                 {results.map((professor) => (
                   <li key={professor.id}>
                     <ProfessorCard
-                      professor={withVisibleKeywords(professor)}
+                      professor={professor}
                       variant="search"
                       // 찜 여부는 응답이 아니라 localStorage 와 대조해 판단합니다.
                       isFavorite={favoriteIds.includes(professor.id)}
