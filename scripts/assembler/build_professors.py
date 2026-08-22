@@ -104,6 +104,8 @@ KCI_PATH = ROOT / "data" / "output" / "kci_papers.json"
 # 최종 keywords를 한글화할 때 쓰는 사전 { "영문 용어": "한글 번역" }.
 # 다른 팀원의 스크립트가 만드는 파일이라 아직 없을 수 있다 → 없으면 경고만 하고 keywordsKo는 []로 둔다.
 KEYWORD_KO_DICT_PATH = ROOT / "data" / "output" / "keyword_ko_dict.json"
+# 아직 번역되지 않은 용어 전체 목록. 사전 담당자가 값만 채워 위 사전으로 바로 쓸 수 있는 모양이다.
+KEYWORD_TERMS_TODO_PATH = ROOT / "data" / "output" / "keyword_terms_to_translate.json"
 
 OVERRIDES_PATH = ROOT / "data" / "input" / "manual_overrides.json"
 REGISTRY_PATH = ROOT / "data" / "input" / "id_registry.json"
@@ -140,6 +142,7 @@ REVIEW_KEYS = (
     "homonymIsolated",              # 동명이인이라 이름 기반 자료를 물려주지 않은 기록
     "rosterMatchCollision",
     "latestPaperDropped",           # 발행일·식별자가 없어 featured 후보에서 뺀 논문
+    "papersWithoutIdentifier",      # pmid·kciId가 둘 다 없어 대표 논문에서 뺀 논문 (원칙 1)
     "kciKeywordsUnmatched",         # KCI 산출물에서 그 교수를 찾지 못했거나 이름이 어긋난 경우
     "latestPaperMissingWithPapers",
     "manualOverridesApplied",
@@ -444,9 +447,18 @@ def fill_from_sources(record, sources, review):
     record["_extra"]["evidence"] = meta_entry.get("evidence")
 
     paper_entry = sources["papers"].get(name) or {}
-    # 원칙 1 (v6.4) — pmid 또는 kciId 중 하나는 있어야 한다. 둘 다 없으면 넣지 않는다
-    kept = [p for p in (paper_entry.get("papers") or [])
-            if (p.get("pmid") or "").strip() or (p.get("kciId") or "").strip()]
+    # 원칙 1 (v6.4) — pmid 또는 kciId 중 하나는 있어야 한다. 둘 다 없으면 넣지 않는다.
+    # 빼는 건 맞지만 어떤 논문이 빠졌는지는 남긴다 (조용히 버리지 않는다)
+    kept = []
+    for paper in paper_entry.get("papers") or []:
+        if (paper.get("pmid") or "").strip() or (paper.get("kciId") or "").strip():
+            kept.append(paper)
+        else:
+            review["papersWithoutIdentifier"].append({
+                "name": name, "title": paper.get("title"),
+                "journal": paper.get("journal"), "year": paper.get("year"),
+                "note": "pmid·kciId가 둘 다 없어 대표 논문에서 제외했다 (원칙 1)",
+            })
     record["papers"] = [{"title": p["title"], "journal": p.get("journal"),
                          "year": p.get("year"),
                          "pmid": (p.get("pmid") or "").strip() or None,
@@ -472,7 +484,17 @@ def fill_from_sources(record, sources, review):
     chosen_pmid = (record["latestPaper"] or {}).get("pmid")
     source_latest = paper_entry.get("latestPaper") or {}
     source_pmid = (source_latest.get("pmid") or "").strip() or None
-    if source_pmid and source_pmid != chosen_pmid:
+    if source_latest and not source_pmid:
+        # 계약상 latestPaper는 PubMed 전용이라 pmid가 없는 건 일어나면 안 되는 일이다.
+        # 상류 산출물의 이상 신호이므로 조용히 넘기지 않는다
+        review["latestPaperDropped"].append({
+            "name": name, "pmid": None,
+            "publishedAt": (source_latest.get("publishedAt") or "").strip() or None,
+            "note": ("원본 latestPaper에 pmid가 없다 (계약상 PubMed 전용 — 상류 산출물 확인 필요) — "
+                     + (f"대신 {chosen_pmid}({record['latestPaper']['publishedAt']})를 선정"
+                        if chosen_pmid else "조건을 만족하는 논문이 없어 latestPaper는 null")),
+        })
+    elif source_pmid and source_pmid != chosen_pmid:
         published_at = (source_latest.get("publishedAt") or "").strip()
         review["latestPaperDropped"].append({
             "name": name, "pmid": source_pmid, "publishedAt": published_at or None,
@@ -516,11 +538,14 @@ def fill_kci_keywords(records, kci_professors, review):
                     "note": "KCI 산출물에 이 id가 없어 kciKeywords를 채우지 못했다 ([]로 둔다)",
                 })
             continue
-        if entry.get("name") and entry["name"] != record["name"]:
-            # id는 같은데 이름이 다르면 남의 논문일 수 있다 → 붙이지 않는다 (원칙 2·4)
+        if entry.get("name") != record["name"]:
+            # id는 같은데 이름이 다르거나 **이름이 없으면** 남의 논문일 수 있다 → 붙이지 않는다.
+            # 이름이 비어 있는 쪽이 오히려 더 의심스러운 상황이므로 무사통과시키지 않는다 (원칙 2·4)
             review["kciKeywordsUnmatched"].append({
                 "id": record["id"], "name": record["name"], "kciName": entry.get("name"),
-                "note": "KCI 산출물의 이름이 달라 kciKeywords를 붙이지 않았다",
+                "note": ("KCI 산출물에 이름이 없어 kciKeywords를 붙이지 않았다"
+                         if not entry.get("name")
+                         else "KCI 산출물의 이름이 달라 kciKeywords를 붙이지 않았다"),
             })
             continue
         papers = entry.get("papers") or []
@@ -534,17 +559,26 @@ def fill_kci_keywords(records, kci_professors, review):
 
 
 def load_keyword_ko_dictionary():
-    """한글 사전을 읽는다. 파일이 없으면 (None, 사유)를 돌려주고 실행은 계속한다."""
+    """한글 사전을 읽는다. (사전, 경고, 빈 값 항목 수)를 돌려주고, 파일이 없어도 실행은 계속한다.
+
+    값이 비어 있는 항목("아직 번역 못 함")은 사전에서 빼되 **몇 건인지는 세어 남긴다** —
+    조용히 사라지면 사전이 덜 채워진 것을 아무도 모른다.
+    """
     if not KEYWORD_KO_DICT_PATH.exists():
-        return None, f"{KEYWORD_KO_DICT_PATH.name}이 없어 keywordsKo를 채우지 못했다 (전원 [])"
+        return None, f"{KEYWORD_KO_DICT_PATH.name}이 없어 keywordsKo를 채우지 못했다 (전원 [])", 0
     try:
         raw = load_json(KEYWORD_KO_DICT_PATH)
     except Exception as error:
-        return None, f"{KEYWORD_KO_DICT_PATH.name}을 읽지 못했다: {error}"
+        return None, f"{KEYWORD_KO_DICT_PATH.name}을 읽지 못했다: {error}", 0
     if not isinstance(raw, dict):
-        return None, f"{KEYWORD_KO_DICT_PATH.name}의 형식이 {{영문: 한글}} 객체가 아니다"
-    # 값이 비어 있는 항목은 번역이 없는 것으로 본다 (빈 문자열을 넣지 않는다 — 원칙 2)
-    return {str(k): str(v).strip() for k, v in raw.items() if str(v or "").strip()}, None
+        return None, f"{KEYWORD_KO_DICT_PATH.name}의 형식이 {{영문: 한글}} 객체가 아니다", 0
+    dictionary = {str(k): str(v).strip() for k, v in raw.items() if str(v or "").strip()}
+    return dictionary, None, len(raw) - len(dictionary)
+
+
+def sort_terms_by_frequency(counter):
+    """등장 빈도 내림차순 → 동점이면 문자열 오름차순 (조립기 전체가 쓰는 정렬 규칙)."""
+    return sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
 def fill_keywords_ko(records, ko_dictionary):
@@ -552,18 +586,21 @@ def fill_keywords_ko(records, ko_dictionary):
 
     사전에 없는 용어는 건너뛴다 — 원문을 그대로 넣거나 번역을 지어내지 않는다 (원칙 2).
     순서는 keywords의 순서를 그대로 따른다.
+
+    사전이 아직 없어도(ko_dictionary=None) **미번역 용어 집계는 그대로 한다.**
+    사전을 만드는 담당자에게 "무엇을 번역해야 하는지"가 가장 필요한 시점이 바로 그때다.
+    이 경우 keywordsKo는 전원 []이고 filled는 0이 된다.
     """
     stats = Counter()
     missing = Counter()
-    if ko_dictionary is None:
-        return stats, missing
+    lookup = ko_dictionary or {}
     for record in records:
         if "keywordsKo" in (record["_extra"].get("manualFields") or []):
             stats["manual"] += 1
             continue
         translated = []
         for term in record["keywords"]:
-            korean = ko_dictionary.get(term)
+            korean = lookup.get(term)
             if korean:
                 translated.append(korean)
             else:
@@ -1221,13 +1258,21 @@ def main():
           + (f" / 수동 확정 {keyword_sources['manual']}명" if keyword_sources["manual"] else ""))
 
     # keywordsKo — 사전을 읽기만 한다 (번역 로직 없음). 사전이 없으면 경고만 하고 계속한다
-    ko_dictionary, ko_warning = load_keyword_ko_dictionary()
+    ko_dictionary, ko_warning, ko_empty_entries = load_keyword_ko_dictionary()
     if ko_warning:
         print(f"    ! {ko_warning}")
     ko_stats, ko_missing = fill_keywords_ko(records, ko_dictionary)
     if ko_dictionary is not None:
-        print(f"    keywordsKo: 사전 {len(ko_dictionary)}개 항목 → 채움 {ko_stats['filled']}명 / "
-              f"빈 배열 {ko_stats['empty']}명 / 사전에 없는 용어 {len(ko_missing)}종")
+        print(f"    keywordsKo: 사전 {len(ko_dictionary)}개 항목"
+              + (f"(값이 빈 항목 {ko_empty_entries}건 제외)" if ko_empty_entries else "")
+              + f" → 채움 {ko_stats['filled']}명 / 빈 배열 {ko_stats['empty']}명 / "
+                f"사전에 없는 용어 {len(ko_missing)}종")
+
+    # 아직 번역되지 않은 용어 전체를 사전 모양(값은 빈 문자열)으로 남긴다.
+    # 담당자가 값만 채워 keyword_ko_dict.json으로 그대로 쓸 수 있다.
+    save_json(KEYWORD_TERMS_TODO_PATH,
+              {term: "" for term, _ in sort_terms_by_frequency(ko_missing)})
+    print(f"    번역 대기 용어 {len(ko_missing)}종 → {KEYWORD_TERMS_TODO_PATH.name}")
 
     contract_records = [{k: v for k, v in r.items() if not k.startswith("_")} for r in records]
     contract_records.sort(key=lambda r: (r["name"], r["department"]))
@@ -1270,11 +1315,15 @@ def main():
             "exists": ko_dictionary is not None,
             "warning": ko_warning,
             "entries": len(ko_dictionary) if ko_dictionary is not None else 0,
+            # 사전에는 있으나 값이 비어 있는(아직 번역 못 한) 항목 — entries에는 포함되지 않는다
+            "emptyEntries": ko_empty_entries,
             "professorsFilled": ko_stats["filled"],
             "professorsEmpty": ko_stats["empty"],
             "missingTermCount": len(ko_missing),
-            # 사전을 만드는 담당자가 바로 쓸 수 있도록 자주 쓰이는 미번역 용어를 남긴다
-            "missingTermsTop": [{"term": t, "professors": n} for t, n in ko_missing.most_common(50)],
+            # 요약용 상위 50개. 전체 목록은 아래 파일에 사전 모양으로 저장된다
+            "missingTermsTop": [{"term": t, "professors": n}
+                                for t, n in sort_terms_by_frequency(ko_missing)[:50]],
+            "missingTermsFile": str(KEYWORD_TERMS_TODO_PATH.relative_to(ROOT)).replace("\\", "/"),
         },
         "excludedDental": {
             "count": len(excluded_dental),
