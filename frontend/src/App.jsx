@@ -7,9 +7,8 @@ import HomePage from './pages/HomePage.jsx'
 import SearchResultPage from './pages/SearchResultPage.jsx'
 import ProfessorDetailPage from './pages/ProfessorDetailPage.jsx'
 import FavoritesPage from './pages/FavoritesPage.jsx'
-import LoginPage from './pages/LoginPage.jsx'
 
-import './styles/global.css'
+// 공통 CSS(index.css / global.css)는 main.jsx 에서 먼저 불러온다.
 
 function App() {
   return (
@@ -26,7 +25,6 @@ function App() {
           {/* :id 는 자리표시자. /professors/P-012 처럼 아무 값이나 들어올 수 있다 */}
           <Route path="/professors/:id" element={<ProfessorDetailPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/login" element={<LoginPage />} />
         </Routes>
       </main>
 

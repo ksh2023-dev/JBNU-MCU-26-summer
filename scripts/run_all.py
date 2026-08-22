@@ -55,7 +55,7 @@ EXIT_INTERRUPTED = 130
 #                      오류가 아니라 '아직 차례가 아닌 것'이므로 건너뜀으로 처리한다.
 #                      **이번 실행의 앞 단계가 만들 예정이면 있는 것으로 친다** (produces 참고).
 #   produces         : 이 단계가 만드는 산출물. 뒤 단계의 requires_files를 채워 주는 근거다.
-#                      6단계(KCI)가 7단계 산출물을 필요로 하는데 순서가 6 → 7이라, 같은 회차에는
+#                      6단계(KCI)가 8단계 산출물을 필요로 하는데 순서가 6 → 8이라, 같은 회차에는
 #                      채워지지 않고 늘 '직전 회차'의 professors.json을 보게 된다 — 의도된 동작.
 #   needs_openalex   : OPENALEX_API_KEY가 있어야 도는 단계. 이 단계가 이번 실행에 포함될 때만
 #                      키를 필수로 검사한다 (사전 점검 참고)
@@ -82,9 +82,16 @@ STEPS = [
          skip_without_key="KCI_API_KEY",
          requires_files=("data/output/professors.json",),
          produces="data/output/kci_papers.json"),
-    # 조립기는 아래 6종을 load_json으로 바로 연다 — 하나라도 없으면 트레이스백을 뱉고 죽는다.
-    # (data/input/professor_pages.json은 저장소에 커밋된 파일이라 조건에서 뺐다)
-    Step(7, "최종 조립", "scripts/assembler/build_professors.py",
+    # 키워드 보강은 6단계가 만든 kci_papers.json을 읽어 같은 파일에 얹는다(전체 재수집이 아니다).
+    # 그 파일이 없으면 스크립트가 exit 1로 죽으므로, 없을 때는 실패가 아니라 건너뜀으로 둔다.
+    Step(7, "KCI 키워드 수집", "scripts/kci_collector/fetch_kci_keywords.py",
+         skip_without_key="KCI_API_KEY",
+         requires_files=("data/output/kci_papers.json",),
+         produces="data/output/kci_papers.json"),
+    # 조립기는 아래 5종과 data/input/professor_pages.json을 load_json으로 바로 연다 —
+    # 하나라도 없으면 트레이스백을 뱉고 죽는다. (professor_pages.json은 저장소에 커밋된
+    # 파일이라 항상 있으므로 조건에서 뺐다)
+    Step(8, "최종 조립", "scripts/assembler/build_professors.py",
          requires_files=(
              "data/output/roster_crawled.json",
              "data/output/profile_images.json",
@@ -287,7 +294,10 @@ def precheck(logger, env_path, env_values, plan):
     if env_values.get("KCI_API_KEY"):
         logger.write("  KCI_API_KEY: 있음")
     else:
-        logger.write("  KCI_API_KEY: 없음 → 6단계(KCI 논문 수집)는 자동으로 건너뜁니다.")
+        kci_steps = ", ".join(
+            f"{s.number}단계({s.name})" for s in STEPS if s.skip_without_key == "KCI_API_KEY"
+        )
+        logger.write(f"  KCI_API_KEY: 없음 → {kci_steps}는 자동으로 건너뜁니다.")
     return True
 
 
