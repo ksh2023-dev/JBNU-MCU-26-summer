@@ -101,6 +101,9 @@ SPECIALTIES_PATH = ROOT / "data" / "output" / "specialties.json"
 PAPERS_PATH = ROOT / "data" / "output" / "professors_papers.json"
 META_PATH = ROOT / "data" / "output" / "professors_enriched_meta.json"
 KCI_PATH = ROOT / "data" / "output" / "kci_papers.json"
+# 최종 keywords를 한글화할 때 쓰는 사전 { "영문 용어": "한글 번역" }.
+# 다른 팀원의 스크립트가 만드는 파일이라 아직 없을 수 있다 → 없으면 경고만 하고 keywordsKo는 []로 둔다.
+KEYWORD_KO_DICT_PATH = ROOT / "data" / "output" / "keyword_ko_dict.json"
 
 OVERRIDES_PATH = ROOT / "data" / "input" / "manual_overrides.json"
 REGISTRY_PATH = ROOT / "data" / "input" / "id_registry.json"
@@ -116,7 +119,7 @@ PROFESSOR_TYPES = ("기초의학", "임상의학", "의학교육학", "인문사
 PAPER_FIELDS = ("title", "journal", "year", "pmid", "kciId")
 
 # v6.5에서 professors.json에 보존하는 키워드 원본 필드 (내부 필드 — API 응답에는 안 나간다)
-V65_KEYWORD_FIELDS = ("meshTerms", "kciKeywords")
+V65_KEYWORD_FIELDS = ("meshTerms", "keywordsKo", "kciKeywords")
 
 # latestPaper 후보의 발행일 형식 — 완전한 YYYY-MM-DD만 인정한다 (계약 v6.5 2장 API ③).
 # 연도-only·연월-only는 후보에서 빼고, 없는 날짜를 01-01 같은 값으로 보정하지 않는다 (원칙 2).
@@ -378,6 +381,7 @@ def new_record(name, department, department_source, professor_type, professor_ty
         # keywords는 meshTerms·kciKeywords가 채워진 뒤 resolve_keywords()가 정한다 (v6.5 선택 규칙)
         "keywords": [],
         "meshTerms": [],                       # MeSH 원본 (내부 필드 — 응답에 나가지 않는다)
+        "keywordsKo": [],                      # 최종 keywords의 한글화 결과 (내부 필드 · 한글 검색용)
         "kciKeywords": {"ko": [], "en": []},   # KCI 원본. 객체와 ko/en 두 배열은 항상 존재한다
         "email": None,
         "homepageUrl": None,
@@ -527,6 +531,53 @@ def fill_kci_keywords(records, kci_professors, review):
             "papersWithEnKeywords": sum(1 for p in papers if (p.get("keywords") or {}).get("en")),
             "duplicateOfPubMed": sum(1 for p in papers if p.get("duplicateOf")),
         }
+
+
+def load_keyword_ko_dictionary():
+    """한글 사전을 읽는다. 파일이 없으면 (None, 사유)를 돌려주고 실행은 계속한다."""
+    if not KEYWORD_KO_DICT_PATH.exists():
+        return None, f"{KEYWORD_KO_DICT_PATH.name}이 없어 keywordsKo를 채우지 못했다 (전원 [])"
+    try:
+        raw = load_json(KEYWORD_KO_DICT_PATH)
+    except Exception as error:
+        return None, f"{KEYWORD_KO_DICT_PATH.name}을 읽지 못했다: {error}"
+    if not isinstance(raw, dict):
+        return None, f"{KEYWORD_KO_DICT_PATH.name}의 형식이 {{영문: 한글}} 객체가 아니다"
+    # 값이 비어 있는 항목은 번역이 없는 것으로 본다 (빈 문자열을 넣지 않는다 — 원칙 2)
+    return {str(k): str(v).strip() for k, v in raw.items() if str(v or "").strip()}, None
+
+
+def fill_keywords_ko(records, ko_dictionary):
+    """최종 keywords를 사전에서 찾아 keywordsKo를 만든다. 번역하지 않고 사전을 읽기만 한다.
+
+    사전에 없는 용어는 건너뛴다 — 원문을 그대로 넣거나 번역을 지어내지 않는다 (원칙 2).
+    순서는 keywords의 순서를 그대로 따른다.
+    """
+    stats = Counter()
+    missing = Counter()
+    if ko_dictionary is None:
+        return stats, missing
+    for record in records:
+        if "keywordsKo" in (record["_extra"].get("manualFields") or []):
+            stats["manual"] += 1
+            continue
+        translated = []
+        for term in record["keywords"]:
+            korean = ko_dictionary.get(term)
+            if korean:
+                translated.append(korean)
+            else:
+                missing[term] += 1
+        # 같은 한글로 번역된 용어가 겹치면 한 번만 (순서는 처음 등장 순서를 유지)
+        record["keywordsKo"] = list(dict.fromkeys(translated))
+        stats["filled" if record["keywordsKo"] else "empty"] += 1
+        if record["keywords"]:
+            record["_extra"]["keywordsKoCoverage"] = {
+                "keywords": len(record["keywords"]),
+                "translated": len(translated),
+                "missing": len(record["keywords"]) - len(translated),
+            }
+    return stats, missing
 
 
 def resolve_keywords(records):
@@ -966,6 +1017,11 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
             problems.append(f"{name}: meshTerms가 배열이 아니다")
         elif len(record["meshTerms"]) > KEYWORDS_LIMIT:
             problems.append(f"{name}: meshTerms {len(record['meshTerms'])}개 (상한 {KEYWORDS_LIMIT})")
+        if not isinstance(record.get("keywordsKo"), list):
+            problems.append(f"{name}: keywordsKo가 없거나 배열이 아니다 — {record.get('keywordsKo')!r}")
+        elif len(record["keywordsKo"]) > len(record["keywords"]):
+            problems.append(f"{name}: keywordsKo({len(record['keywordsKo'])})가 "
+                            f"keywords({len(record['keywords'])})보다 많다")
         kci = record["kciKeywords"]
         if not isinstance(kci, dict) or set(kci) != {"ko", "en"}:
             problems.append(f"{name}: kciKeywords 객체가 없거나 ko/en 칸이 어긋난다 — {kci!r}")
@@ -1053,9 +1109,10 @@ def report(contract_records, review, excluded_dental, hospital_total,
         filled = sum(1 for r in contract_records if r[field] not in (None, [], ""))
         note = "  ← 출처 없음(v6.3 호환용)" if field == "labName" else ""
         print(f"      {field:<17} {filled:>3}/{total}  ({filled * 100 // total:>3}%){note}")
-    for field, label in (("meshTerms", "meshTerms"), ("kciKeywords", "kciKeywords.ko/.en")):
-        if field == "meshTerms":
-            filled = sum(1 for r in contract_records if r["meshTerms"])
+    for field, label in (("meshTerms", "meshTerms"), ("keywordsKo", "keywordsKo"),
+                         ("kciKeywords", "kciKeywords.ko/.en")):
+        if field in ("meshTerms", "keywordsKo"):
+            filled = sum(1 for r in contract_records if r[field])
             print(f"      {label:<17} {filled:>3}/{total}  ({filled * 100 // total:>3}%)")
         else:
             ko = sum(1 for r in contract_records if r["kciKeywords"]["ko"])
@@ -1163,6 +1220,15 @@ def main():
           f"KCI 영문 {keyword_sources['kci-en']}명 / 없음 {keyword_sources['none']}명"
           + (f" / 수동 확정 {keyword_sources['manual']}명" if keyword_sources["manual"] else ""))
 
+    # keywordsKo — 사전을 읽기만 한다 (번역 로직 없음). 사전이 없으면 경고만 하고 계속한다
+    ko_dictionary, ko_warning = load_keyword_ko_dictionary()
+    if ko_warning:
+        print(f"    ! {ko_warning}")
+    ko_stats, ko_missing = fill_keywords_ko(records, ko_dictionary)
+    if ko_dictionary is not None:
+        print(f"    keywordsKo: 사전 {len(ko_dictionary)}개 항목 → 채움 {ko_stats['filled']}명 / "
+              f"빈 배열 {ko_stats['empty']}명 / 사전에 없는 용어 {len(ko_missing)}종")
+
     contract_records = [{k: v for k, v in r.items() if not k.startswith("_")} for r in records]
     contract_records.sort(key=lambda r: (r["name"], r["department"]))
     out_of_scope |= {i["name"] for i in review["droppedNoDepartment"]}
@@ -1198,6 +1264,17 @@ def main():
             "HOSPITAL_ONLY_PROFESSOR_TYPE": HOSPITAL_ONLY_PROFESSOR_TYPE,
             "PAPERS_LIMIT": PAPERS_LIMIT,
             "KEYWORDS_LIMIT": KEYWORDS_LIMIT,
+        },
+        "keywordKoDictionary": {
+            "path": str(KEYWORD_KO_DICT_PATH.relative_to(ROOT)).replace("\\", "/"),
+            "exists": ko_dictionary is not None,
+            "warning": ko_warning,
+            "entries": len(ko_dictionary) if ko_dictionary is not None else 0,
+            "professorsFilled": ko_stats["filled"],
+            "professorsEmpty": ko_stats["empty"],
+            "missingTermCount": len(ko_missing),
+            # 사전을 만드는 담당자가 바로 쓸 수 있도록 자주 쓰이는 미번역 용어를 남긴다
+            "missingTermsTop": [{"term": t, "professors": n} for t, n in ko_missing.most_common(50)],
         },
         "excludedDental": {
             "count": len(excluded_dental),

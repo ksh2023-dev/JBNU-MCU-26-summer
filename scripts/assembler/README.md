@@ -1,8 +1,7 @@
 # scripts/assembler — 최종 조립기 (D단계)
 
 수집 산출물 6종을 병합해 백엔드가 읽는 **`data/output/professors.json`** 을 만든다.
-출력 모양의 기준은 **팀이 확정한 계약 사양(v6.5 기준)** 이다.
-`docs/`의 계약 문서에는 최신 결정이 아직 반영되지 않았을 수 있으므로, 서로 다르면 확정 사양을 따른다.
+출력 모양의 기준은 **데이터 계약 v6.5**다 ([docs/data-contract-v6.5.md](../../docs/data-contract-v6.5.md) · PR #33으로 main에 병합).
 
 ```bash
 python scripts/assembler/build_professors.py
@@ -38,6 +37,7 @@ python scripts/assembler/build_professors.py
       "specialties": [],                // 없으면 []
       "keywords": [],                   // 최종 영문 키워드 (아래 선택 규칙) — 응답에 나가는 유일한 키워드 필드
       "meshTerms": [],                  // MeSH 원본 (내부 필드)
+      "keywordsKo": [],                 // 최종 keywords의 한글화 결과 (내부 필드 · 한글 검색용)
       "kciKeywords": { "ko": [], "en": [] },  // KCI 원본. 객체와 ko/en 두 배열은 항상 존재
       "email": null,
       "homepageUrl": null,
@@ -61,7 +61,7 @@ python scripts/assembler/build_professors.py
 | `keywords` 선택 규칙 | `meshTerms`가 비어 있지 않으면 그대로, 비었으면 `kciKeywords.en`, 둘 다 비었으면 `[]`. **부분 병합하지 않는다** (MeSH가 1개뿐이어도 그 1개만 쓴다). 선택 결과는 extra의 `keywordsSource`(`mesh`/`kci-en`/`none`)에 남는다 |
 | `kciKeywords` 집계 | `kci_papers.json`(교수 **id** 기준)에서 그 교수 논문들의 keyword를 언어별로 모아 **등장 빈도 내림차순 → 문자열 오름차순**으로 정렬하고 `KEYWORDS_LIMIT`개까지 담는다. 한 논문 안의 중복은 1회로 센다. id는 같은데 이름이 다르면 붙이지 않고 `review.kciKeywordsUnmatched`에 남긴다 |
 | `latestPaper` 후보 조건 | `allPapers` 중 **pmid가 있고 완전한 `YYYY-MM-DD` 발행일을 가진 PubMed 논문**만 후보다. 최신 논문이 연도-only여서 빠지면 **그 아래로 내려가 조건을 만족하는 가장 최신 논문**을 고른다(예전에는 통째로 `null`이 됐다). 후보가 하나도 없으면 `null`. **날짜를 보정하지 않는다** |
-| `keywordsKo` | **여기서 만들지 않는다** — 최종 `keywords`를 한글화하는 별도 스크립트(다른 팀원) 담당 |
+| `keywordsKo` | **항상 출력한다** (값이 없으면 `[]`). 최종 `keywords`의 각 항목을 한글 사전에서 찾아 채운다 — **번역은 하지 않고 사전을 읽기만 한다** (아래) |
 
 **v6.3 → v6.4에서 바뀐 것**
 
@@ -83,6 +83,25 @@ python scripts/assembler/build_professors.py
 > 임시로 `labName`이 꼭 필요하면 `EMIT_LABNAME = True`로 되살릴 수 있다.
 > `data/sample/professors.sample.json`도 아직 v6.3(labName 있음·kciId 없음)이라,
 > 조립기는 샘플에서 칸 목록을 읽은 뒤 위 개정분을 코드에서 반영한다.
+
+### `keywordsKo` — 한글 사전 읽기
+
+`keywordsKo`는 최종 `keywords`를 한글화한 **내부 검색용 필드**다 (API 응답에 나가지 않는다).
+조립기는 **번역하지 않는다.** 아래 사전 파일을 읽어 대응되는 한글만 옮겨 담는다.
+
+```jsonc
+// data/output/keyword_ko_dict.json  (경로는 상수 KEYWORD_KO_DICT_PATH)
+{ "Heart Failure": "심부전", "Nursing education": "간호교육" }
+```
+
+| 상황 | 동작 |
+| --- | --- |
+| 사전 파일이 **있음** | `keywords`를 순서대로 훑어 사전에 있는 항목만 `keywordsKo`에 담는다. **없는 용어는 건너뛴다** — 원문을 그대로 넣거나 번역을 지어내지 않는다(원칙 2). 순서는 `keywords`와 같고, 같은 한글로 겹치면 한 번만 담는다 |
+| 사전 파일이 **없음** | `keywordsKo = []`로 두고 **경고만 출력한 뒤 정상 종료**한다 (실패로 처리하지 않는다). 사전은 다른 팀원의 스크립트가 만든다 |
+
+- 사전의 값이 빈 문자열인 항목은 번역이 없는 것으로 보고 건너뛴다.
+- 실행 결과 요약과 **사전에 없는 용어 상위 50개**가 `professors_extra.json`의
+  `keywordKoDictionary`에 남는다 — 사전을 만드는 담당자가 그대로 참고할 수 있다.
 
 ## 산출물 취급
 
