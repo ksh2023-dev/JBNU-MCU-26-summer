@@ -1,29 +1,37 @@
-"""D단계 — 최종 조립기. 수집 산출물을 병합해 데이터 계약 v6.4 모양의 professors.json을 만든다.
+"""D단계 — 최종 조립기. 수집 산출물을 병합해 데이터 계약 v6.5 모양의 professors.json을 만든다.
+
+v6.5 개정분
+  - `keywords`를 만드는 규칙 확정: meshTerms 우선 → 없으면 kciKeywords.en → 둘 다 없으면 []
+  - 키워드 원본 보존 필드 신설: `meshTerms`(MeSH 원본) · `kciKeywords`({ko, en} KCI 원본)
+    → professors.json 안에 보존하는 내부 필드다 (API 응답에는 keywords 하나만 나간다)
+  - `latestPaper` 후보 조건 확정: pmid가 있고 완전한 YYYY-MM-DD 발행일을 가진 PubMed 논문만.
+    연도-only·연월-only·KCI 전용은 제외하되, 조건을 만족하는 논문 중 가장 최신을 고른다
+  ※ `keywordsKo`(최종 keywords의 한글화)는 다른 팀원의 스크립트가 채운다 — 여기서 만들지 않는다
 
 v6.4 개정분 (2026-08-16 회의)
   - 대상 범위: 의대 공식 명단 기준 (치과 계열·병원 전용 교수 제외) → 0-2장
   - `labName` 필드 삭제 (수집 출처 없음) → EMIT_LABNAME
   - `papers[]`에 `kciId` 추가. 논문은 pmid 또는 kciId 중 하나가 반드시 있어야 한다 (원칙 1)
-  ※ 계약 문서: docs/data-contract-v6.4.md (PR #30으로 main에 병합되어 이 브랜치에도 있다)
-    다만 계약 샘플(data/sample/professors.sample.json)은 아직 v6.3이라, 위 두 개정분은
-    샘플에서 읽은 칸 목록에 코드가 명시적으로 반영한다.
-    또 계약 v6.4에는 latestPaper의 스키마가 정의되어 있지 않다(내부 필드라는 언급뿐) —
-    아래 EMIT_LATEST_PAPER_KCI_ID 주석 참고.
+  ※ 이 코드의 기준은 팀이 확정한 사양(작업지시서)이다. docs/의 계약 문서는 최신 결정이
+    아직 반영되지 않았을 수 있으므로, 서로 다르면 확정 사양을 따른다.
+    계약 샘플(data/sample/professors.sample.json)도 아직 v6.3이라, 개정분(labName 삭제 ·
+    papers[].kciId · meshTerms · kciKeywords)은 샘플에서 읽은 칸 목록에 코드가 명시적으로 반영한다.
 
-입력 (재료 6종)
+입력 (재료 7종)
   data/output/roster_crawled.json            의대 명단 (교수구분·교실·직위·전화·동명이인 메모·diff)
   data/input/professor_pages.json            병원 교수 프로필 URL (= 병원 명단 243명, homepageUrl 재료)
   data/output/profile_images.json            프로필 사진 URL
   data/output/specialties.json               전문진료분야
   data/output/professors_papers.json         대표 논문 3편 · latestPaper · allPapers
   data/output/professors_enriched_meta.json  영문명 · MeSH 키워드 후보 · 이메일
+  data/output/kci_papers.json                KCI 논문 (교수 id 기준) — kciKeywords 재료
 
 관리 파일 (사람이 관리, 커밋 대상 — 구조 설명은 data/input/README.md)
   data/input/manual_overrides.json           수동 검수 대장 (사람 확정이 자동 수집을 이긴다)
   data/input/id_registry.json                id 대장 (한 번 부여한 id는 영원히 불변)
 
 출력 (data/output/ — .gitignore 대상, 커밋하지 않는다)
-  data/output/professors.json                   백엔드가 읽는 최종 파일. 계약(v6.4) 칸만 담는다
+  data/output/professors.json                   백엔드가 읽는 최종 파일. 계약(v6.5) 칸만 담는다
   data/output/professors_extra.json             계약 밖 내부 데이터 (영문명·초록·근거·제외 명단·review)
   data/output/_cache_hospital_departments.json  병원 프로필에서 읽은 진료과 캐시 (재실행 시 재조회 생략)
 
@@ -64,24 +72,21 @@ PAPERS_LIMIT = 3                    # 대표 논문 수 (계약 1-2: 최신 1편
 # False로 두어 칸을 빼도 백엔드 적재는 실패하지 않는다 (대신 응답에 labName: null이 그대로 붙는다).
 EMIT_LABNAME = False
 
-# 최신 논문이 KCI 전용(pmid 없음·kciId만 있음)일 때 latestPaper를 kciId로 내보낼지.
-# 기본값 False인 이유 두 가지 — 어느 쪽도 조립기가 임의로 정할 수 없다.
-#  (1) 계약 v6.4에 latestPaper 스키마가 없다. 내부 필드라 응답에 나가지 않는다는 언급뿐이라
-#      kciId 칸을 조립기가 임의로 만들 근거가 없다.
-#  (2) 백엔드 schemas.py의 LatestPaper.pmid는 필수 문자열이다. pmid 없이 내보내면
-#      ProfessorRecord 검증이 실패해 professors.json 전체가 적재되지 않는다.
-# False인 동안에도 조용히 버리지 않는다 — review.latestPaperKciOnly에 전원 기록한다.
-# 계약에 latestPaper 스키마가 정의되고 백엔드가 pmid를 옵셔널로 바꾸면 True로 켠다.
-EMIT_LATEST_PAPER_KCI_ID = False
+# 키워드 배열의 개수 상한. 계약에는 상한 규정이 없어, MeSH를 만드는 C단계
+# (scripts/pubmed_collector/enrich_authors_mesh.py의 TOP_KEYWORDS)와 같은 값으로 맞춘다.
+# meshTerms는 이미 상한이 적용된 값을 그대로 받고, kciKeywords에 같은 상한을 적용한다.
+KEYWORDS_LIMIT = 10
 
 SLEEP_SECONDS = 0.5                 # 서버 예절: 병원 페이지 호출 사이 대기
 TIMEOUT_SECONDS = 15
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
 import json
+import re
 import sys
 import time
 import urllib.request
+from collections import Counter
 from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
@@ -95,6 +100,7 @@ IMAGES_PATH = ROOT / "data" / "output" / "profile_images.json"
 SPECIALTIES_PATH = ROOT / "data" / "output" / "specialties.json"
 PAPERS_PATH = ROOT / "data" / "output" / "professors_papers.json"
 META_PATH = ROOT / "data" / "output" / "professors_enriched_meta.json"
+KCI_PATH = ROOT / "data" / "output" / "kci_papers.json"
 
 OVERRIDES_PATH = ROOT / "data" / "input" / "manual_overrides.json"
 REGISTRY_PATH = ROOT / "data" / "input" / "id_registry.json"
@@ -108,6 +114,13 @@ PROFESSOR_TYPES = ("기초의학", "임상의학", "의학교육학", "인문사
 
 # 계약 1-2의 논문 객체 칸 (v6.4 — kciId 추가)
 PAPER_FIELDS = ("title", "journal", "year", "pmid", "kciId")
+
+# v6.5에서 professors.json에 보존하는 키워드 원본 필드 (내부 필드 — API 응답에는 안 나간다)
+V65_KEYWORD_FIELDS = ("meshTerms", "kciKeywords")
+
+# latestPaper 후보의 발행일 형식 — 완전한 YYYY-MM-DD만 인정한다 (계약 v6.5 2장 API ③).
+# 연도-only·연월-only는 후보에서 빼고, 없는 날짜를 01-01 같은 값으로 보정하지 않는다 (원칙 2).
+FULL_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # 계약 밖이지만 수동 검수 대장으로 고칠 수 있는 필드 (professors_extra.json 전용)
 EXTRA_ONLY_FIELDS = ("nameEn",)
@@ -124,7 +137,7 @@ REVIEW_KEYS = (
     "homonymIsolated",              # 동명이인이라 이름 기반 자료를 물려주지 않은 기록
     "rosterMatchCollision",
     "latestPaperDropped",           # 발행일·식별자가 없어 featured 후보에서 뺀 논문
-    "latestPaperKciOnly",           # 최신 논문이 KCI 전용이라 latestPaper를 내보내지 못한 교수
+    "kciKeywordsUnmatched",         # KCI 산출물에서 그 교수를 찾지 못했거나 이름이 어긋난 경우
     "latestPaperMissingWithPapers",
     "manualOverridesApplied",
     "manualOverridesUnmatched",
@@ -362,7 +375,10 @@ def new_record(name, department, department_source, professor_type, professor_ty
         record["labName"] = None
     record.update({
         "specialties": [],
+        # keywords는 meshTerms·kciKeywords가 채워진 뒤 resolve_keywords()가 정한다 (v6.5 선택 규칙)
         "keywords": [],
+        "meshTerms": [],                       # MeSH 원본 (내부 필드 — 응답에 나가지 않는다)
+        "kciKeywords": {"ko": [], "en": []},   # KCI 원본. 객체와 ko/en 두 배열은 항상 존재한다
         "email": None,
         "homepageUrl": None,
         "latestPaper": None,       # 백엔드 내부 필드 (API ③ 정렬용, 응답에는 안 나감)
@@ -371,6 +387,7 @@ def new_record(name, department, department_source, professor_type, professor_ty
         "_extra": {
             # 교수 구분을 의대 명단에서 확인하지 못하고 추정했다는 표시 (계약 파일에는 넣지 않는다)
             "professorTypeInferred": professor_type_inferred,
+            "manualFields": [],        # 수동 검수 대장이 확정한 필드 (자동 계산이 덮지 않게)
             "nameEn": None,
             "nameEnVariants": [],
             "keywordsCandidateAll": [],
@@ -414,7 +431,8 @@ def fill_from_sources(record, sources, review):
     record["specialties"] = list((sources["specialties"].get(name) or {}).get("specialties") or [])
 
     meta_entry = sources["meta"].get(name) or {}
-    record["keywords"] = list(meta_entry.get("keywordsCandidate") or [])   # 영어 MeSH 후보(필터판) 그대로
+    # MeSH 원본. C단계에서 이미 (빈도 내림차순 → 이름 오름차순) 정렬·상한 적용된 값이다
+    record["meshTerms"] = list(meta_entry.get("keywordsCandidate") or [])[:KEYWORDS_LIMIT]
     record["email"] = meta_entry.get("email") or None
     record["_extra"]["nameEn"] = meta_entry.get("nameEn") or None
     record["_extra"]["nameEnVariants"] = list(meta_entry.get("nameEnVariants") or [])
@@ -433,37 +451,103 @@ def fill_from_sources(record, sources, review):
                         for p in kept[:PAPERS_LIMIT]]
     record["_extra"]["allPapers"] = list(paper_entry.get("allPapers") or [])
 
-    # latestPaper — 식별자 기준을 papers[]와 맞춘다 (v6.4 원칙 1: pmid 또는 kciId)
-    latest = paper_entry.get("latestPaper")
-    if latest:
-        latest_pmid = (latest.get("pmid") or "").strip() or None
-        latest_kci_id = (latest.get("kciId") or "").strip() or None
-        published_at = (latest.get("publishedAt") or "").strip() or None
-        if not published_at:
-            # 발행일이 없으면 API ③의 정렬 근거가 없다 → 후보에서 빠진다 (계약 2장 API ③ · 원칙 2)
-            review["latestPaperDropped"].append({
-                "name": name, "pmid": latest_pmid, "kciId": latest_kci_id,
-                "note": "latestPaper에 발행일(publishedAt)이 없어 featured 후보에서 제외",
+    # latestPaper — 계약 v6.5 후보 조건: pmid가 있고 완전한 YYYY-MM-DD 발행일을 가진 PubMed 논문.
+    # 최신 논문이 연도-only여서 후보에서 빠지면, 그 아래로 내려가 조건을 만족하는 가장 최신 논문을 고른다.
+    # (예전에는 원본 latestPaper 하나만 보고 실패하면 통째로 null이 되어 featured에서 조용히 빠졌다)
+    all_papers = paper_entry.get("allPapers") or []
+    candidates = [p for p in all_papers
+                  if (p.get("pmid") or "").strip()
+                  and FULL_DATE_PATTERN.match((p.get("publishedAt") or "").strip())]
+    if candidates:
+        # 같은 날짜면 pmid로 순서를 고정한다 (재실행해도 같은 결과가 나오도록)
+        best = max(candidates, key=lambda p: (p["publishedAt"].strip(), p["pmid"].strip()))
+        record["latestPaper"] = {"pmid": best["pmid"].strip(),
+                                 "publishedAt": best["publishedAt"].strip()}
+
+    # 후보에서 빠진 논문은 사유와 함께 남긴다 (조용히 버리지 않는다)
+    chosen_pmid = (record["latestPaper"] or {}).get("pmid")
+    source_latest = paper_entry.get("latestPaper") or {}
+    source_pmid = (source_latest.get("pmid") or "").strip() or None
+    if source_pmid and source_pmid != chosen_pmid:
+        published_at = (source_latest.get("publishedAt") or "").strip()
+        review["latestPaperDropped"].append({
+            "name": name, "pmid": source_pmid, "publishedAt": published_at or None,
+            "note": ("원본 최신 논문의 발행일이 완전한 YYYY-MM-DD가 아니어서 후보에서 제외 — "
+                     + (f"대신 {chosen_pmid}({record['latestPaper']['publishedAt']})를 선정"
+                        if chosen_pmid else "조건을 만족하는 논문이 없어 latestPaper는 null")),
+        })
+    elif not candidates and all_papers:
+        review["latestPaperDropped"].append({
+            "name": name, "pmid": None, "publishedAt": None,
+            "note": f"논문 {len(all_papers)}편 모두 pmid+완전한 발행일 조건을 만족하지 않아 "
+                    "featured 후보에서 제외 (날짜를 보정하지 않는다 — 원칙 2)",
+        })
+
+
+def aggregate_kci_keywords(papers):
+    """KCI 논문들의 keyword를 언어별로 모아 (빈도 내림차순 → 문자열 오름차순)으로 정렬한다.
+
+    MeSH(C단계)와 같은 규칙·같은 상한을 쓴다. 재실행해도 순서가 흔들리지 않는다.
+    """
+    result = {}
+    for language in ("ko", "en"):
+        counter = Counter()
+        for paper in papers:
+            terms = (paper.get("keywords") or {}).get(language) or []
+            # 한 논문 안의 중복은 한 번만 센다
+            counter.update({t.strip() for t in terms if isinstance(t, str) and t.strip()})
+        ordered = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        result[language] = [term for term, _ in ordered[:KEYWORDS_LIMIT]]
+    return result
+
+
+def fill_kci_keywords(records, kci_professors, review):
+    """KCI 산출물(교수 id 기준)에서 kciKeywords를 채운다. id 부여가 끝난 뒤 호출한다."""
+    for record in records:
+        entry = kci_professors.get(record["id"])
+        if entry is None:
+            if kci_professors:   # KCI 산출물이 아예 없으면(미수집) 굳이 전원 기록하지 않는다
+                review["kciKeywordsUnmatched"].append({
+                    "id": record["id"], "name": record["name"],
+                    "note": "KCI 산출물에 이 id가 없어 kciKeywords를 채우지 못했다 ([]로 둔다)",
+                })
+            continue
+        if entry.get("name") and entry["name"] != record["name"]:
+            # id는 같은데 이름이 다르면 남의 논문일 수 있다 → 붙이지 않는다 (원칙 2·4)
+            review["kciKeywordsUnmatched"].append({
+                "id": record["id"], "name": record["name"], "kciName": entry.get("name"),
+                "note": "KCI 산출물의 이름이 달라 kciKeywords를 붙이지 않았다",
             })
-        elif not latest_pmid and not latest_kci_id:
-            review["latestPaperDropped"].append({
-                "name": name, "pmid": None, "kciId": None,
-                "note": "latestPaper에 식별자(pmid·kciId)가 없어 featured 후보에서 제외 (원칙 1)",
-            })
-        elif latest_pmid:
-            # pmid가 있으면 그것만 담는다. 둘 다 있는 논문도 PubMed 우선 (계약 3장 링크 규칙)
-            record["latestPaper"] = {"pmid": latest_pmid, "publishedAt": published_at}
-        elif EMIT_LATEST_PAPER_KCI_ID:
-            record["latestPaper"] = {"pmid": None, "kciId": latest_kci_id,
-                                     "publishedAt": published_at}
+            continue
+        papers = entry.get("papers") or []
+        record["kciKeywords"] = aggregate_kci_keywords(papers)
+        record["_extra"]["kciEvidence"] = {
+            "papers": len(papers),
+            "papersWithKoKeywords": sum(1 for p in papers if (p.get("keywords") or {}).get("ko")),
+            "papersWithEnKeywords": sum(1 for p in papers if (p.get("keywords") or {}).get("en")),
+            "duplicateOfPubMed": sum(1 for p in papers if p.get("duplicateOf")),
+        }
+
+
+def resolve_keywords(records):
+    """최종 keywords 선택 (계약 v6.5): meshTerms → kciKeywords.en → []. 부분 병합하지 않는다."""
+    counts = Counter()
+    for record in records:
+        if "keywords" in record["_extra"].get("manualFields") or []:
+            counts["manual"] += 1
+            continue
+        if record["meshTerms"]:
+            record["keywords"] = list(record["meshTerms"])
+            source = "mesh"
+        elif record["kciKeywords"]["en"]:
+            record["keywords"] = list(record["kciKeywords"]["en"])
+            source = "kci-en"
         else:
-            # KCI 전용 최신 논문 — 계약에 latestPaper 스키마가 없고 백엔드가 pmid를 요구해
-            # 지금은 내보내지 못한다. 조용히 빠지지 않도록 전원 기록한다 (상수 주석 참고)
-            review["latestPaperKciOnly"].append({
-                "name": name, "kciId": latest_kci_id, "publishedAt": published_at,
-                "note": "최신 논문이 KCI 전용이라 latestPaper를 내보내지 못했다 "
-                        "→ featured 후보에서 빠진다. EMIT_LATEST_PAPER_KCI_ID 주석 참고",
-            })
+            record["keywords"] = []
+            source = "none"
+        record["_extra"]["keywordsSource"] = source
+        counts[source] += 1
+    return counts
 
 
 def build_records(sources, review):
@@ -584,6 +668,7 @@ def apply_overrides(records, overrides, review, out_of_scope):
             })
             continue
 
+        record["_extra"].setdefault("manualFields", []).append(field)
         review["manualOverridesApplied"].append({
             "name": name, "department": record["department"], "field": field,
             "before": before, "after": item.get("value"), "confirmedBy": item.get("confirmedBy"),
@@ -775,10 +860,11 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
     """자체 정합 검사. 위반은 모아서 한 번에 보고한다."""
     problems = []
     # 계약 모양의 기준은 샘플 파일이지만 샘플은 아직 v6.3이다.
-    # v6.4 개정분(labName 삭제)을 여기서 명시적으로 반영한다.
+    # v6.4(labName 삭제)·v6.5(meshTerms·kciKeywords 보존) 개정분을 여기서 명시적으로 반영한다.
     allowed = set(load_json(SAMPLE_PATH)["professors"][0].keys())
     if not EMIT_LABNAME:
         allowed.discard("labName")
+    allowed.update(V65_KEYWORD_FIELDS)
     overrides_checked = check_overrides_applied(records, overrides, problems, review, out_of_scope)
 
     # 동명이인에게 남의 확정값이 통과되지 않도록 대상 지정(department)까지 키에 넣는다
@@ -829,15 +915,31 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
         if len(record["papers"]) > PAPERS_LIMIT:
             problems.append(f"{name}: 대표 논문 {len(record['papers'])}편 (최대 {PAPERS_LIMIT})")
 
-        # latestPaper가 papers와 모순되지 않는지
+        # latestPaper — v6.5 후보 조건(pmid + 완전한 YYYY-MM-DD)과 원본 일치 확인.
+        # 대표 논문 3편에 들어 있을 필요는 없다 (최신 논문이 연도-only면 그 아래에서 고르기 때문)
         latest = record["latestPaper"]
         if latest:
-            identifier = latest.get("pmid") or latest.get("kciId")
-            paper_ids = {p["pmid"] for p in record["papers"] if p.get("pmid")}                 | {p["kciId"] for p in record["papers"] if p.get("kciId")}
-            if not identifier or not latest.get("publishedAt"):
-                problems.append(f"{name}: latestPaper의 식별자(pmid·kciId)나 publishedAt이 비어 있다")
-            elif identifier not in paper_ids:
-                problems.append(f"{name}: latestPaper({identifier})가 대표 논문 목록에 없다")
+            source_all = {p["pmid"]: p for p in ((sources["papers"].get(name) or {}).get("allPapers") or [])
+                          if p.get("pmid")}
+            if set(latest.keys()) != {"pmid", "publishedAt"}:
+                problems.append(f"{name}: latestPaper 칸이 계약과 다르다 — {sorted(latest)}")
+            if not latest.get("pmid"):
+                problems.append(f"{name}: latestPaper에 pmid가 없다 (KCI 전용은 후보가 될 수 없다)")
+            elif not FULL_DATE_PATTERN.match(latest.get("publishedAt") or ""):
+                problems.append(f"{name}: latestPaper.publishedAt이 YYYY-MM-DD가 아니다 "
+                                f"— {latest.get('publishedAt')!r}")
+            else:
+                origin = source_all.get(latest["pmid"])
+                if origin is None:
+                    problems.append(f"{name}: latestPaper({latest['pmid']})가 원본 논문 목록에 없다")
+                elif (origin.get("publishedAt") or "").strip() != latest["publishedAt"]:
+                    problems.append(f"{name}: latestPaper 발행일이 원본과 다르다 (pmid {latest['pmid']})")
+                else:
+                    newer = [p for p in source_all.values()
+                             if FULL_DATE_PATTERN.match((p.get("publishedAt") or "").strip())
+                             and (p["publishedAt"].strip(), p["pmid"]) > (latest["publishedAt"], latest["pmid"])]
+                    if newer:
+                        problems.append(f"{name}: latestPaper보다 최신인 후보가 {len(newer)}편 남아 있다")
         elif record["papers"]:
             review["latestPaperMissingWithPapers"].append(
                 {"id": record["id"], "name": name, "papers": len(record["papers"])})
@@ -859,12 +961,50 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
                 - set((sources["specialties"].get(name) or {}).get("specialties") or []) \
                 - confirmed_specialties:
             problems.append(f"{name}: 원본에 없는 전문분야가 들어 있다")
+        # v6.5 — 키워드 원본 필드가 모든 교수에게 존재하고 배열인지
+        if not isinstance(record["meshTerms"], list):
+            problems.append(f"{name}: meshTerms가 배열이 아니다")
+        elif len(record["meshTerms"]) > KEYWORDS_LIMIT:
+            problems.append(f"{name}: meshTerms {len(record['meshTerms'])}개 (상한 {KEYWORDS_LIMIT})")
+        kci = record["kciKeywords"]
+        if not isinstance(kci, dict) or set(kci) != {"ko", "en"}:
+            problems.append(f"{name}: kciKeywords 객체가 없거나 ko/en 칸이 어긋난다 — {kci!r}")
+        else:
+            for language in ("ko", "en"):
+                if not isinstance(kci[language], list):
+                    problems.append(f"{name}: kciKeywords.{language}가 배열이 아니다")
+                elif len(kci[language]) > KEYWORDS_LIMIT:
+                    problems.append(f"{name}: kciKeywords.{language} {len(kci[language])}개 "
+                                    f"(상한 {KEYWORDS_LIMIT})")
+
+        # 원칙 4 — 키워드도 원본 그대로인지
+        if set(record["meshTerms"]) - set((sources["meta"].get(name) or {}).get("keywordsCandidate") or []):
+            problems.append(f"{name}: 원본에 없는 MeSH 용어가 들어 있다")
+        kci_entry = (sources.get("kci") or {}).get(record["id"]) or {}
+        if isinstance(kci, dict):
+            for language in ("ko", "en"):
+                if not kci.get(language):
+                    continue
+                source_terms = {t.strip() for paper in (kci_entry.get("papers") or [])
+                                for t in ((paper.get("keywords") or {}).get(language) or [])
+                                if isinstance(t, str) and t.strip()}
+                if set(kci[language]) - source_terms:
+                    problems.append(f"{name}: 원본에 없는 KCI 키워드가 들어 있다 ({language})")
+
+        # v6.5 선택 규칙: meshTerms 우선 → kciKeywords.en → []. 부분 병합 금지
         confirmed_keywords = {v for values in allowed_override(name, department, "keywords")
                               for v in (values or [])}
-        if set(record["keywords"]) \
-                - set((sources["meta"].get(name) or {}).get("keywordsCandidate") or []) \
-                - confirmed_keywords:
-            problems.append(f"{name}: 원본에 없는 키워드가 들어 있다")
+        if not confirmed_keywords:
+            if record["meshTerms"]:
+                expected = list(record["meshTerms"])
+            elif isinstance(kci, dict) and kci.get("en"):
+                expected = list(kci["en"])
+            else:
+                expected = []
+            if record["keywords"] != expected:
+                problems.append(f"{name}: keywords가 v6.5 선택 규칙과 다르다 "
+                                f"(meshTerms {len(record['meshTerms'])}개 · kciKeywords.en "
+                                f"{len(kci.get('en') or []) if isinstance(kci, dict) else 0}개)")
         for field, source_value in (("profileImageUrl", sources["images"].get(name)),
                                     ("email", (sources["meta"].get(name) or {}).get("email")),
                                     ("homepageUrl", sources["pages"].get(name))):
@@ -913,6 +1053,14 @@ def report(contract_records, review, excluded_dental, hospital_total,
         filled = sum(1 for r in contract_records if r[field] not in (None, [], ""))
         note = "  ← 출처 없음(v6.3 호환용)" if field == "labName" else ""
         print(f"      {field:<17} {filled:>3}/{total}  ({filled * 100 // total:>3}%){note}")
+    for field, label in (("meshTerms", "meshTerms"), ("kciKeywords", "kciKeywords.ko/.en")):
+        if field == "meshTerms":
+            filled = sum(1 for r in contract_records if r["meshTerms"])
+            print(f"      {label:<17} {filled:>3}/{total}  ({filled * 100 // total:>3}%)")
+        else:
+            ko = sum(1 for r in contract_records if r["kciKeywords"]["ko"])
+            en = sum(1 for r in contract_records if r["kciKeywords"]["en"])
+            print(f"      {label:<17} ko {ko:>3}/{total} · en {en:>3}/{total}")
     papers = [p for r in contract_records for p in r["papers"]]
     print(f"      {'papers 식별자':<16} 논문 {len(papers)}편 — "
           f"pmid {sum(1 for p in papers if p.get('pmid'))}편 / "
@@ -952,6 +1100,8 @@ def main():
     papers_file = load_json(PAPERS_PATH)
     meta_file = load_json(META_PATH)
     overrides = load_json(OVERRIDES_PATH) if OVERRIDES_PATH.exists() else {"overrides": []}
+    kci_file = load_json(KCI_PATH) if KCI_PATH.exists() else None
+    kci_professors = (kci_file or {}).get("professors") or {}
 
     sources = {
         "roster": roster,
@@ -960,9 +1110,11 @@ def main():
         "specialties": specialties_file["specialties"],
         "papers": papers_file["professors"],
         "meta": meta_file["professors"],
+        "kci": kci_professors,
     }
     source_dates = {
         "roster_crawled": roster["collectedAt"],
+        **({"kci_papers": kci_file["collectedAt"]} if kci_file else {}),
         "profile_images": images_file["collectedAt"],
         "specialties": specialties_file["collectedAt"],
         "professors_papers": papers_file["collectedAt"],
@@ -973,7 +1125,9 @@ def main():
     print(f"[1] 입력 읽기 — 의대 명단 {len(roster['professors'])}건 / 병원 명단 {len(pages)}명 / "
           f"사진 {len(sources['images'])} / 전문분야 {len(sources['specialties'])} / "
           f"논문 {len(sources['papers'])} / 메타 {len(sources['meta'])} / "
-          f"수동검수 {len(overrides.get('overrides') or [])}건")
+          f"KCI {len(kci_professors)} / 수동검수 {len(overrides.get('overrides') or [])}건")
+    if not kci_professors:
+        print(f"    ! KCI 산출물이 없다({KCI_PATH.name}) → kciKeywords는 전부 []로 둔다")
     print(f"    collectedAt = {collected_at} (원본 기준일 {source_dates})")
 
     review = {key: [] for key in REVIEW_KEYS}
@@ -1001,6 +1155,13 @@ def main():
 
     id_stats = assign_ids(records, review, overrides)
     verify_distinct_persons(records, overrides, review)
+
+    # KCI 산출물은 교수 id를 키로 쓰므로 id 부여 뒤에 붙인다
+    fill_kci_keywords(records, kci_professors, review)
+    keyword_sources = resolve_keywords(records)
+    print(f"    keywords 선택: MeSH {keyword_sources['mesh']}명 / "
+          f"KCI 영문 {keyword_sources['kci-en']}명 / 없음 {keyword_sources['none']}명"
+          + (f" / 수동 확정 {keyword_sources['manual']}명" if keyword_sources["manual"] else ""))
 
     contract_records = [{k: v for k, v in r.items() if not k.startswith("_")} for r in records]
     contract_records.sort(key=lambda r: (r["name"], r["department"]))
@@ -1036,6 +1197,7 @@ def main():
             "FETCH_HOSPITAL_DEPARTMENT": FETCH_HOSPITAL_DEPARTMENT,
             "HOSPITAL_ONLY_PROFESSOR_TYPE": HOSPITAL_ONLY_PROFESSOR_TYPE,
             "PAPERS_LIMIT": PAPERS_LIMIT,
+            "KEYWORDS_LIMIT": KEYWORDS_LIMIT,
         },
         "excludedDental": {
             "count": len(excluded_dental),
