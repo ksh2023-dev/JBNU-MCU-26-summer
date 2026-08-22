@@ -1,7 +1,7 @@
 # scripts/assembler — 최종 조립기 (D단계)
 
 수집 산출물 6종을 병합해 백엔드가 읽는 **`data/output/professors.json`** 을 만든다.
-출력 모양의 기준은 **데이터 계약 v6.4**다 (`docs/data-contract-v6.4.md`).
+출력 모양의 기준은 **데이터 계약 v6.5**다 ([docs/data-contract-v6.5.md](../../docs/data-contract-v6.5.md) · PR #33으로 main에 병합).
 
 ```bash
 python scripts/assembler/build_professors.py
@@ -15,14 +15,14 @@ python scripts/assembler/build_professors.py
 
 | 구분 | 파일 |
 | --- | --- |
-| 입력 | `data/output/roster_crawled.json` · `data/input/professor_pages.json` · `data/output/profile_images.json` · `data/output/specialties.json` · `data/output/professors_papers.json` · `data/output/professors_enriched_meta.json` |
+| 입력 | `data/output/kci_papers.json` · `data/output/roster_crawled.json` · `data/input/professor_pages.json` · `data/output/profile_images.json` · `data/output/specialties.json` · `data/output/professors_papers.json` · `data/output/professors_enriched_meta.json` |
 | 관리 파일 (커밋) | `data/input/manual_overrides.json` (수동 검수 대장) · `data/input/id_registry.json` (id 대장) |
 | 출력 (커밋 안 함) | `data/output/professors.json` · `data/output/professors_extra.json` · `data/output/_cache_hospital_departments.json` |
 
 `professors.json`에는 **계약에 있는 칸만** 담는다. 영문명·초록 등 계약 밖 데이터는
 전부 `professors_extra.json`으로 나가므로 백엔드 검증과 충돌하지 않는다.
 
-## 산출물 스키마 (v6.4)
+## 산출물 스키마 (v6.5)
 
 ```jsonc
 {
@@ -35,7 +35,10 @@ python scripts/assembler/build_professors.py
       "professorType": "임상의학",        // 기초의학 | 임상의학 | 의학교육학 | 인문사회의학
       "department": "마취통증의학교실",    // 분과·겸직이 병기될 수 있다
       "specialties": [],                // 없으면 []
-      "keywords": [],                   // 영문 MeSH — v6.4에서 화면 미표시(검색 매칭 전용)
+      "keywords": [],                   // 최종 영문 키워드 (아래 선택 규칙) — 응답에 나가는 유일한 키워드 필드
+      "meshTerms": [],                  // MeSH 원본 (내부 필드)
+      "keywordsKo": [],                 // 최종 keywords의 한글화 결과 (내부 필드 · 한글 검색용)
+      "kciKeywords": { "ko": [], "en": [] },  // KCI 원본. 객체와 ko/en 두 배열은 항상 존재
       "email": null,
       "homepageUrl": null,
       "latestPaper": {                  // 백엔드 내부 필드(API ③ 정렬용) — 계약 응답에는 안 나간다
@@ -50,6 +53,16 @@ python scripts/assembler/build_professors.py
 }
 ```
 
+**v6.4 → v6.5에서 바뀐 것**
+
+| 변경 | 조립기 처리 |
+| --- | --- |
+| 키워드 원본 보존 | `meshTerms`(MeSH 원본)·`kciKeywords`(`{ko, en}` KCI 원본)를 professors.json에 담는다. **내부 필드라 API 응답에는 나가지 않는다**(백엔드가 계약 밖 칸을 무시한다). 배열은 값이 없어도 항상 존재하며 `[]`다 — `null`·생략을 쓰지 않는다 |
+| `keywords` 선택 규칙 | `meshTerms`가 비어 있지 않으면 그대로, 비었으면 `kciKeywords.en`, 둘 다 비었으면 `[]`. **부분 병합하지 않는다** (MeSH가 1개뿐이어도 그 1개만 쓴다). 선택 결과는 extra의 `keywordsSource`(`mesh`/`kci-en`/`none`)에 남는다 |
+| `kciKeywords` 집계 | `kci_papers.json`(교수 **id** 기준)에서 그 교수 논문들의 keyword를 언어별로 모아 **등장 빈도 내림차순 → 문자열 오름차순**으로 정렬하고 `KEYWORDS_LIMIT`개까지 담는다. 한 논문 안의 중복은 1회로 센다. id는 같은데 이름이 다르면 붙이지 않고 `review.kciKeywordsUnmatched`에 남긴다 |
+| `latestPaper` 후보 조건 | `allPapers` 중 **pmid가 있고 완전한 `YYYY-MM-DD` 발행일을 가진 PubMed 논문**만 후보다. 최신 논문이 연도-only여서 빠지면 **그 아래로 내려가 조건을 만족하는 가장 최신 논문**을 고른다(예전에는 통째로 `null`이 됐다). 후보가 하나도 없으면 `null`. **날짜를 보정하지 않는다** |
+| `keywordsKo` | **항상 출력한다** (값이 없으면 `[]`). 최종 `keywords`의 각 항목을 한글 사전에서 찾아 채운다 — **번역은 하지 않고 사전을 읽기만 한다** (아래) |
+
 **v6.3 → v6.4에서 바뀐 것**
 
 | 변경 | 조립기 처리 |
@@ -59,11 +72,10 @@ python scripts/assembler/build_professors.py
 | 원칙 1 확장 (`pmid` **또는** `kciId` 필수) | 둘 다 없는 논문은 넣지 않고, 정합 검사에서 0건인지 확인한다 |
 | 대상 범위 확정 (0-2장) | 의대 공식 명단 기준 — 아래 "알아 둘 규칙" 참고 |
 
-**`latestPaper`(내부 필드)는 계약에 스키마가 없다.** v6.4는 "내부 선정용이며 응답에 포함되지 않는다"고만
-적고 칸을 정의하지 않는다. 그래서 조립기는 기존 모양(`pmid` + `publishedAt`)을 유지하고,
-`kciId` 칸을 임의로 만들지 않는다. 최신 논문이 KCI 전용이면 `EMIT_LATEST_PAPER_KCI_ID`가 켜져 있을 때만
-`{pmid: null, kciId, publishedAt}`으로 내보내고, 꺼져 있으면 `review.latestPaperKciOnly`에 기록한다
-(조용히 빠지지 않게 하기 위한 것 — featured 후보에서 제외된다).
+**`latestPaper`(내부 필드) 스키마는 `pmid` + `publishedAt`(`YYYY-MM-DD`)으로 확정됐다.**
+`publishedAt`의 `YYYY-MM-DD` 보장은 **조립기의 내부 계약**이다 (PubMed 원본이 늘 그 형식이라는 뜻이 아니다). KCI 전용 논문은
+후보가 될 수 없고(계약: PubMed만), 연도-only·연월-only 발행일도 후보에서 빠진다. 후보에서 뺀 논문은
+사유와 함께 `review.latestPaperDropped`에 남긴다.
 
 > ⚠️ **백엔드는 아직 v6.3 스키마다** (`backend/app/schemas.py`). 이 산출물로 기동은 되지만
 > 응답이 계약과 어긋난다 — 상세 응답에 `labName: null`이 그대로 붙고(`ProfessorDetail.lab_name`이 남아 있음),
@@ -71,6 +83,25 @@ python scripts/assembler/build_professors.py
 > 임시로 `labName`이 꼭 필요하면 `EMIT_LABNAME = True`로 되살릴 수 있다.
 > `data/sample/professors.sample.json`도 아직 v6.3(labName 있음·kciId 없음)이라,
 > 조립기는 샘플에서 칸 목록을 읽은 뒤 위 개정분을 코드에서 반영한다.
+
+### `keywordsKo` — 한글 사전 읽기
+
+`keywordsKo`는 최종 `keywords`를 한글화한 **내부 검색용 필드**다 (API 응답에 나가지 않는다).
+조립기는 **번역하지 않는다.** 아래 사전 파일을 읽어 대응되는 한글만 옮겨 담는다.
+
+```jsonc
+// data/output/keyword_ko_dict.json  (경로는 상수 KEYWORD_KO_DICT_PATH)
+{ "Heart Failure": "심부전", "Nursing education": "간호교육" }
+```
+
+| 상황 | 동작 |
+| --- | --- |
+| 사전 파일이 **있음** | `keywords`를 순서대로 훑어 사전에 있는 항목만 `keywordsKo`에 담는다. **없는 용어는 건너뛴다** — 원문을 그대로 넣거나 번역을 지어내지 않는다(원칙 2). 순서는 `keywords`와 같고, 같은 한글로 겹치면 한 번만 담는다 |
+| 사전 파일이 **없음** | `keywordsKo = []`로 두고 **경고만 출력한 뒤 정상 종료**한다 (실패로 처리하지 않는다). 사전은 다른 팀원의 스크립트가 만든다 |
+
+- 사전의 값이 빈 문자열인 항목은 번역이 없는 것으로 보고 건너뛴다.
+- 실행 결과 요약과 **사전에 없는 용어 상위 50개**가 `professors_extra.json`의
+  `keywordKoDictionary`에 남는다 — 사전을 만드는 담당자가 그대로 참고할 수 있다.
 
 ## 산출물 취급
 
@@ -159,5 +190,5 @@ DATA_FILE=<repo>/data/output/professors.json uvicorn app.main:app
 | `USE_DEPARTMENT_CACHE` | `True` | 조회 결과 캐시 사용 |
 | `HOSPITAL_ONLY_PROFESSOR_TYPE` | `"임상의학"` | 의대 명단에 없는 병원 교수의 교수 구분(추정) |
 | `PAPERS_LIMIT` | `3` | 대표 논문 수 |
-| `EMIT_LATEST_PAPER_KCI_ID` | `False` | 최신 논문이 KCI 전용일 때 `latestPaper`를 `kciId`로 내보낼지. 계약 v6.4에 **latestPaper 스키마가 없고** 백엔드 `LatestPaper.pmid`가 필수라 기본값 `False` — 대신 해당 교수를 `review.latestPaperKciOnly`에 남긴다 |
+| `KEYWORDS_LIMIT` | `10` | 키워드 배열 개수 상한. **계약에 상한 규정이 없어**, MeSH를 만드는 C단계(`scripts/pubmed_collector/enrich_authors_mesh.py`의 `TOP_KEYWORDS`)와 같은 값으로 맞췄다. `kciKeywords.ko`/`.en`에 적용된다 |
 | `EMIT_LABNAME` | `False` | `labName` 칸 출력 여부. v6.4에서 계약 필드 자체가 삭제돼 기본값 `False`. 백엔드가 v6.4 반영 전이라 임시로 필요하면 `True` (값은 항상 `null`) |
