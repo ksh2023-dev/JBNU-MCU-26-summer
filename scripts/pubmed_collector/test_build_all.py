@@ -13,16 +13,38 @@
     - 26839493: 실제 산출물(professors_papers.json)에 들어가 있던 오귀속 논문
     - 37750376: 리뷰 당시 같은 검색어로 잡혔던 논문 (relevance 정렬이라 시점에 따라 다름)
 
+파일 구성
+    · 파서·대조 규칙        — 함수를 직접 부르는 순수 단위 테스트 (외부 의존 없음)
+    · 파이프라인_후보_선택   — process_professor()를 mock으로 감싼 흐름 테스트 (통신 없음)
+    · 산출물_모양_표본기반   — testdata/professors_papers.sample.json(익명 표본)을 읽는다
+    · 실제_산출물_점검      — data/output/professors_papers.json이 **있을 때만** 도는 통합 점검
+
+**산출물은 .gitignore 대상이라 새로 clone한 저장소에는 없다.** 그래서 실제 산출물을 읽는
+검사는 별도 클래스로 떼어 내고 파일이 없으면 skip한다 — 단위 테스트 결과가 작업 디렉터리
+상태에 좌우되면 "몇 개 통과"라는 말이 재현되지 않기 때문이다(2026-08-21 #34 리뷰 지적).
+
+네트워크를 부르는 테스트는 없다.
+
 실행 (저장소 루트에서):
     python -m unittest discover -s scripts/pubmed_collector -v
+    python -m pytest scripts/pubmed_collector/test_build_all.py -q
 """
 
 import json
+import re
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import build_all
 import citation_utils
+
+# 표본 데이터 — 실제 산출물은 .gitignore 대상이라 새로 clone한 저장소에는 없다.
+# 단위 테스트가 로컬 상태에 좌우되지 않도록, 검증에 필요한 최소한을 담은 표본을 함께 둔다.
+SAMPLE_PATH = Path(__file__).resolve().parent / "testdata" / "professors_papers.sample.json"
+# 실제 산출물 — 있을 때만 도는 통합 점검용 (없으면 skip)
+REAL_OUTPUT_PATH = (Path(__file__).resolve().parents[2]
+                    / "data" / "output" / "professors_papers.json")
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +481,10 @@ class 학술지_연도_대조(unittest.TestCase):
             ("JDigDis", "Journal of digestive diseases"),                 # 붙여 쓴 약어
             ("Tumor Biol", "Tumour biology"),                             # 미국/영국 철자
             ("Brain Rresearch", "Brain research"),                        # 원문 오타
+            # 원문 오타 "Photochem hotobiol"(P 누락) — 'hotobiol'↔'photobiology' 유사도가
+            # 정확히 0.80이라 _JOURNAL_TOKEN_SIM 문턱에 걸쳐 통과한다. 문턱을 조금이라도
+            # 올리면 이 논문이 journalMismatch 목록에 오르므로 경계값으로 고정해 둔다.
+            ("Photochem hotobiol", "Photochemistry and photobiology"),
         ]:
             self.assertTrue(build_all.journals_match(cited, record), f"{cited} ↔ {record}")
 
@@ -491,18 +517,33 @@ class 학술지_연도_대조(unittest.TestCase):
             2021,
         )
 
-    def test_오탐_사례는_규칙에_걸리지만_제거_대상이_아니다(self):
-        # 학술지 개명 — "Korean J Lab Med"는 2012년에 "Ann Lab Med"로 이름이 바뀌었다
-        self.assertFalse(build_all.journals_match("Korean J Lab Med", "Annals of laboratory medicine"))
-        # 걸리더라도 채택을 막지 않는다: 이 PMID들은 산출물에 남아 있어야 한다
-        state = json.loads(
-            (Path(build_all.__file__).resolve().parents[2]
-             / "data/output/professors_papers.json").read_text(encoding="utf-8")
-        )
-        for professor, pmid in [("조용곤", "22779071"), ("석현", "24471041"),
-                                ("류한욱", "38660095"), ("정환정", "36732943")]:
-            papers = state["professors"].get(professor, {}).get("allPapers") or []
-            self.assertIn(pmid, [p["pmid"] for p in papers], f"{professor} {pmid}가 사라졌다")
+    def test_오탐_사례는_규칙에_걸리지만_채택을_막지_않는다(self):
+        """실제로 걸렸던 오탐 4쌍 — 학술지명은 다르지만 같은 논문이다.
+
+        journal_mismatch()는 사유를 돌려주지만, titles_match()는 그대로 통과시킨다.
+        이 규칙이 '기록 전용'이라는 것이 여기서 고정된다.
+        """
+        cases = [
+            # 학술지 개명 — "Korean J Lab Med"는 2012년에 "Ann Lab Med"로 이름이 바뀌었다
+            ("Korean J Lab Med", "Annals of laboratory medicine",
+             "MYC rearrangement involving a novel non-immunoglobulin chromosomal locus"),
+            # 학술지 개명 (구강악안면외과학회지)
+            ("J Korean Assoc Maxillofac Plast Reconstr Surg",
+             "Journal of the Korean Association of Oral and Maxillofacial Surgeons",
+             "Correction of post-traumatic anterior open bite by injection of botulinum toxin"),
+            # 원문 오타 — "Front Nutr"이라 적었지만 doi는 10.3389/fneur (Frontiers in Neurology)
+            ("Front Nutr", "Frontiers in neurology",
+             "Clinical approaches for poststroke seizure"),
+        ]
+        for cited_journal, record_journal, title in cases:
+            with self.subTest(cited_journal):
+                # ① 규칙에는 걸린다 (사람이 검수할 목록에 오른다)
+                self.assertFalse(build_all.journals_match(cited_journal, record_journal))
+                paper = {"title": title + ".", "journal": record_journal, "year": 2020}
+                self.assertEqual(build_all.journal_mismatch(cited_journal, 2020, paper),
+                                 "학술지 다름")
+                # ② 그래도 채택은 막히지 않는다
+                self.assertTrue(build_all.titles_match(title, paper["title"], cited_journal))
 
 
 class 저자_판별_공용모듈(unittest.TestCase):
@@ -517,8 +558,16 @@ class 저자_판별_공용모듈(unittest.TestCase):
         self.assertIs(build_all._is_author_segment, citation_utils.is_author_segment)
 
     def test_enrich가_build_all의_비공개함수를_직접_참조하지_않는다(self):
+        """`build_all._` 로 시작하는 참조가 **하나도** 없어야 한다.
+
+        예전에는 `build_all._is_author`만 검사해서 `build_all._describe_error` 의존이
+        그대로 통과했다(2026-08-21 #34 리뷰 지적). 이름 하나씩 막는 대신 접두사로 검사한다.
+        공개 함수(build_all.call_with_retry)는 계약이므로 허용한다.
+        """
         source = (Path(build_all.__file__).parent / "enrich_authors_mesh.py").read_text(encoding="utf-8")
-        self.assertNotIn("build_all._is_author", source)
+        private_refs = re.findall(r"build_all\._\w+", source)
+        self.assertEqual(private_refs, [],
+                         f"build_all의 비공개 함수를 직접 참조한다: {sorted(set(private_refs))}")
         self.assertIn("citation_utils.is_author_segment", source)
 
     def test_기존_저자_표기는_그대로_인정한다(self):
@@ -595,16 +644,191 @@ class 한글_제목_검색_제외(unittest.TestCase):
         self.assertAlmostEqual(build_all.hangul_ratio("가나다 abc"), 0.5)
         self.assertEqual(build_all.hangul_ratio("2012 (13):145-150"), 0.0)
 
-    def test_건너뛴_인용문이_논문을_끌어오지_않는다(self):
-        # 실제 산출물에서 두 오귀속이 사라졌는지 고정한다
-        state = json.loads(
-            (Path(build_all.__file__).resolve().parents[2]
-             / "data/output/professors_papers.json").read_text(encoding="utf-8")
-        )
-        for professor, pmid in [("김연동", "30311302"), ("원유희", "21639960")]:
-            papers = state["professors"][professor]["allPapers"]
-            self.assertNotIn(pmid, [p["pmid"] for p in papers])
-        self.assertTrue(state["review"]["koreanTitleSkipped"], "koreanTitleSkipped가 비어 있다")
+    def test_실제로_오귀속을_불렀던_한글_인용문을_고정한다(self):
+        """이 두 인용문이 각각 'Up-to-Date.'(Int J Urol)와 'Copd.'(BMJ Clin Evid)를 끌어왔다.
+
+        섞인 영문 낱말만 걸린 것이라 검색 자체를 건너뛰어야 한다.
+        (검색을 건너뛴다는 것 자체는 아래 파이프라인_후보_선택 테스트에서 확인한다)
+        """
+        for title in ("대상포진 Up-to-Date",
+                      "일차의료용 근거기반 만성폐쇄성폐질환(COPD) 임상진료지침, 대한의학회, 질병관리본부"):
+            self.assertTrue(build_all.is_korean_title(title), title)
+
+
+class 산출물_모양_표본기반(unittest.TestCase):
+    """수집기가 내는 review 목록의 모양을 표본 JSON으로 고정한다.
+
+    실제 산출물(data/output/professors_papers.json)은 git에 올라가지 않으므로,
+    새로 clone한 저장소에서도 돌게 testdata/professors_papers.sample.json을 읽는다.
+    표본은 실제 산출물에서 검증에 필요한 최소한만 뽑아 교수 이름을 익명화한 것이다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.state = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+
+    def test_journalMismatch_항목이_사람이_검수할_칸을_갖춘다(self):
+        rows = self.state["review"]["journalMismatch"]
+        self.assertTrue(rows)
+        for row in rows:
+            for field in ("professor", "pmid", "why", "citedJournal", "recordJournal",
+                          "citedYear", "recordYear"):
+                self.assertIn(field, row, f"{row.get('pmid')}에 {field}가 없다")
+
+    def test_journalMismatch에_걸려도_논문은_그대로_남는다(self):
+        """이 규칙은 기록 전용이다 — 목록에 오른 PMID가 allPapers에서 사라지면 안 된다."""
+        for row in self.state["review"]["journalMismatch"]:
+            papers = self.state["professors"][row["professor"]]["allPapers"]
+            self.assertIn(row["pmid"], [p["pmid"] for p in papers],
+                          f"{row['professor']} {row['pmid']}가 사라졌다")
+
+    def test_koreanTitleSkipped_항목이_한글_비중을_담는다(self):
+        rows = self.state["review"]["koreanTitleSkipped"]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertIn("professor", row)
+            self.assertIn("hangulRatio", row)
+            # 기록된 제목은 실제로 한글 제목 판정을 받아야 한다
+            self.assertTrue(build_all.is_korean_title(row["title"]), row["title"])
+            self.assertGreaterEqual(row["hangulRatio"], build_all.KOREAN_TITLE_RATIO)
+
+    def test_notFound와_koreanTitleSkipped는_서로_다른_칸이다(self):
+        """건너뛴 인용문을 notFound에 섞으면 '검색했지만 못 찾음' 통계가 오염된다."""
+        review = self.state["review"]
+        self.assertIn("notFound", review)
+        self.assertIn("koreanTitleSkipped", review)
+        skipped = {r["title"] for r in review["koreanTitleSkipped"]}
+        not_found = {r.get("title") for r in review["notFound"]}
+        self.assertFalse(skipped & not_found)
+
+
+class 파이프라인_후보_선택(unittest.TestCase):
+    """process_professor()의 후보 선택 흐름 — 통신은 전부 mock으로 막는다.
+
+    retmax=10으로 후보를 늘린 뒤 '제목 대조를 통과한 후보 수'로 판단하는 구조라,
+    0개·1개·2개 이상의 세 갈래를 여기서 고정한다.
+    """
+
+    TITLE = "Treatment Patterns of Type 2 Diabetes Assessed Using a Common Data Model"
+    CITATION = TITLE + ". J Korean Med Sci. 2021 Sep 13;36(36):e230."
+
+    @staticmethod
+    def _paper(pmid, title):
+        return {"pmid": pmid, "title": title, "journal": "J Korean Med Sci",
+                "year": 2021, "publishedAt": "2021-09-13", "abstract": None}
+
+    def _run(self, candidates, fetched, exclusions=None):
+        """search·efetch·OpenAlex를 막고 process_professor를 한 번 돌린다."""
+        def fake_fetch_papers(pmids):
+            return [p for p in fetched if p["pmid"] in pmids]
+
+        with mock.patch.object(build_all, "search_pmid_candidates", return_value=candidates), \
+             mock.patch.object(build_all.fetch_one, "fetch_papers", side_effect=fake_fetch_papers), \
+             mock.patch.object(build_all.enrich_citations, "fetch_cited_by_counts",
+                               return_value={p["pmid"]: 1 for p in fetched}), \
+             mock.patch.object(build_all.time, "sleep"):
+            return build_all.process_professor(
+                "표본교수", [[self.CITATION, ""]], "[1/1]", None, exclusions
+            )
+
+    def test_통과_후보가_0개면_notFound(self):
+        # 검색은 후보를 줬지만 제목이 전혀 다른 논문이라 대조에서 전부 탈락한다
+        fetched = [self._paper("11111111", "Something entirely unrelated to diabetes care.")]
+        record, _parse_failed, not_found, ambiguous, _mismatch, _excluded, _korean = \
+            self._run(["11111111"], fetched)
+        self.assertEqual(record["allPapers"], [])
+        self.assertEqual(len(not_found), 1)
+        self.assertEqual(ambiguous, [])
+        self.assertEqual(record["stats"]["notFound"], 1)
+
+    def test_통과_후보가_1개면_채택(self):
+        fetched = [self._paper("22222222", self.TITLE + "."),
+                   self._paper("33333333", "A completely different paper about something else.")]
+        record, _parse_failed, not_found, ambiguous, _mismatch, _excluded, _korean = \
+            self._run(["33333333", "22222222"], fetched)
+        self.assertEqual([p["pmid"] for p in record["allPapers"]], ["22222222"])
+        self.assertEqual(not_found, [])
+        self.assertEqual(ambiguous, [])
+
+    def test_통과_후보가_2개_이상이면_ambiguous(self):
+        # 같은 제목의 논문이 둘 — 어느 쪽인지 지목할 수 없으므로 넣지 않는다 (원칙 2)
+        fetched = [self._paper("44444444", self.TITLE + "."),
+                   self._paper("55555555", self.TITLE + ".")]
+        record, _parse_failed, not_found, ambiguous, _mismatch, _excluded, _korean = \
+            self._run(["44444444", "55555555"], fetched)
+        self.assertEqual(record["allPapers"], [])
+        self.assertEqual(len(ambiguous), 1)
+        self.assertEqual([c["pmid"] for c in ambiguous[0]["candidates"]],
+                         ["44444444", "55555555"])
+        self.assertEqual(record["stats"]["ambiguous"], 1)
+
+    def test_한글_제목은_검색조차_하지_않는다(self):
+        with mock.patch.object(build_all, "search_pmid_candidates") as search, \
+             mock.patch.object(build_all.fetch_one, "fetch_papers", return_value=[]), \
+             mock.patch.object(build_all.time, "sleep"):
+            record, _parse_failed, not_found, _ambiguous, _mismatch, _excluded, korean = \
+                build_all.process_professor(
+                    "표본교수", [["대상포진 Up-to-Date", ""]], "[1/1]", None
+                )
+        search.assert_not_called()                 # 검색을 아예 부르지 않는다
+        self.assertEqual(len(korean), 1)
+        self.assertEqual(not_found, [])            # notFound로 새지 않는다
+        self.assertEqual(record["stats"]["cited"], 0)
+
+    def test_수동_제외_대장에_있으면_채택하지_않는다(self):
+        fetched = [self._paper("66666666", self.TITLE + ".")]
+        exclusions = {"66666666": {"professors": {"표본교수"}, "reason": "표본 사유"}}
+        record, _parse_failed, _not_found, _ambiguous, _mismatch, excluded, _korean = \
+            self._run(["66666666"], fetched, exclusions)
+        self.assertEqual(record["allPapers"], [])
+        self.assertEqual(len(excluded), 1)
+        self.assertEqual(excluded[0]["reason"], "표본 사유")
+
+    def test_학술지가_달라도_채택하고_기록만_남긴다(self):
+        # 인용문은 "J Korean Med Sci"인데 레코드는 다른 학술지 — 기록 전용 규칙이라 채택된다
+        fetched = [{"pmid": "77777777", "title": self.TITLE + ".",
+                    "journal": "Sleep medicine", "year": 2021,
+                    "publishedAt": "2021-09-13", "abstract": None}]
+        record, _parse_failed, _not_found, _ambiguous, mismatched, _excluded, _korean = \
+            self._run(["77777777"], fetched)
+        self.assertEqual([p["pmid"] for p in record["allPapers"]], ["77777777"])
+        self.assertEqual(len(mismatched), 1)
+        self.assertIn("학술지 다름", mismatched[0]["why"])
+
+
+@unittest.skipUnless(REAL_OUTPUT_PATH.exists(),
+                     "실제 산출물이 없어 건너뜁니다 — professors_papers.json은 .gitignore 대상이라 "
+                     "파이프라인을 돌린 적이 있는 작업 디렉터리에만 있다")
+class 실제_산출물_점검(unittest.TestCase):
+    """실행해 본 적이 있는 작업 디렉터리에서만 도는 통합 점검.
+
+    산출물은 .gitignore 대상이라 새로 clone한 저장소에는 없다. 그래서 실패가 아니라
+    **skip**으로 둔다 — 단위 테스트 결과가 로컬 상태에 좌우되면 안 되기 때문이다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.state = json.loads(REAL_OUTPUT_PATH.read_text(encoding="utf-8"))
+
+    def test_journalMismatch에_걸려도_논문은_그대로_남는다(self):
+        for row in self.state["review"].get("journalMismatch", []):
+            papers = self.state["professors"].get(row["professor"], {}).get("allPapers") or []
+            self.assertIn(row["pmid"], [p["pmid"] for p in papers],
+                          f"{row['professor']} {row['pmid']}가 사라졌다")
+
+    def test_수동_제외_대장의_논문이_남아_있지_않다(self):
+        table = build_all.load_manual_exclusions()
+        for pmid, entry in table.items():
+            for professor in entry["professors"]:
+                papers = self.state["professors"].get(professor, {}).get("allPapers") or []
+                self.assertNotIn(pmid, [p["pmid"] for p in papers],
+                                 f"{professor} {pmid}가 아직 남아 있다")
+
+    def test_한글_제목_인용문은_검색을_건너뛴다(self):
+        skipped = self.state["review"].get("koreanTitleSkipped", [])
+        self.assertTrue(skipped, "koreanTitleSkipped가 비어 있다")
+        for row in skipped:
+            self.assertTrue(build_all.is_korean_title(row["title"]), row["title"])
 
 
 if __name__ == "__main__":

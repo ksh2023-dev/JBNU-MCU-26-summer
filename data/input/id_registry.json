@@ -1,6 +1,6 @@
 {
   "_comment": "교수 id 대장 — 한 번 부여한 id는 영원히 바꾸지 않는다 (프론트 찜이 id로 저장된다). 조립기가 자동으로 갱신하므로 손으로 고치지 않는다. 구조 설명은 data/input/README.md 참고.",
-  "updatedAt": "2026-08-21",
+  "updatedAt": "2026-08-19",
   "nextNumber": 250,
   "entries": [
     {
