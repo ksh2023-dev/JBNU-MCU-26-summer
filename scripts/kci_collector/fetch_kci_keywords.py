@@ -42,6 +42,7 @@ MERGE_EVERY편마다 그리고 마지막에 한 번 반영한다. 캐시가 이�
     python scripts/kci_collector/fetch_kci_keywords.py
 """
 
+import hashlib
 import json
 import os
 import re
@@ -77,12 +78,13 @@ _HANGUL_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
 # 응답 파싱
 # ---------------------------------------------------------------------------
 
-def _article_info(root):
-    """응답에서 articleInfo 요소를 찾는다. 없으면 None.
+def _article_infos(root):
+    """응답의 articleInfo 요소를 모두 돌려준다.
 
     referenceInfo(참고문헌)는 형제라 여기에 딸려 오지 않는다 — 파싱 범위를 좁히는 핵심이다.
+    개수 판단은 호출한 쪽에서 한다: 상세 조회는 논문 1편을 묻는 것이므로 2개 이상은 이상 신호다.
     """
-    return next(iter(fetch_kci._iter_by_tag(root, "articleinfo")), None)
+    return list(fetch_kci._iter_by_tag(root, "articleinfo"))
 
 
 # 한 칸에 여러 키워드가 뭉쳐 온 경우를 쪼갠다 — 2026-08-21 전수 확인에서 158개/104편.
@@ -134,11 +136,21 @@ SPLIT_EXCLUSIONS = {
 #   clearAll : 그 논문의 키워드를 전부 버린다 (쓸 수 있는 것이 하나도 없을 때)
 #   keep     : 그 언어의 키워드를 여기 적은 목록으로 갈아끼운다 (다른 언어는 그대로)
 #   reason   : 왜 손댔는지. 반드시 남긴다
+#   rawFingerprint : **그 판단을 내릴 때 KCI가 주던 원본 값의 지문**
+#
+# rawFingerprint가 있는 이유 — 손질은 "그때 그 값"을 보고 사람이 내린 판단이다.
+# kciId만 보고 적용하면, KCI가 나중에 키워드를 정상으로 고쳐도 이 코드가 영구히 덮어써서
+# 멀쩡한 데이터를 계속 지운다. 그래서 **현재 원본이 그때와 같을 때만** 적용하고,
+# 달라졌으면 손대지 않고 review.keywordFixStale에 남긴다 (사람이 다시 확인해야 한다는 신호).
+#
+# 지문이 어긋나 stale로 빠지면 review.keywordFixStale에 현재 지문이 함께 찍힌다.
+# 새 원본을 확인한 뒤 판단이 그대로면 그 값을 rawFingerprint에 옮겨 적으면 된다.
 #
 # 원본은 keywordsRaw에 보존하고, 실행할 때마다 review.keywordFixes에도 기록한다.
 # ---------------------------------------------------------------------------
 KEYWORD_FIXES = {
     "ART001005699": {
+        "rawFingerprint": "sha256:5fca9fc30f409640",
         "clearAll": True,
         "reason": "키워드 자리 전체가 학술지 앞부속으로 오염됐다 — "
                   "'2003 217Received ：April 4' · '2003 Accepted ：June 3' · "
@@ -147,13 +159,29 @@ KEYWORD_FIXES = {
                   "쓸 수 있는 키워드가 하나도 없어 비운다",
     },
     "ART000872261": {
+        "rawFingerprint": "sha256:c2ed0bf69fb0379a",
         "clearAll": True,
         "reason": "키워드 자리에 참고문헌이 통째로 들어왔다 — "
                   "'Flyer DC. Report of the New England Regional Infant Cardiac Program. "
                   "Pediatrics 1980;64:432-6' · 'James SD. Repair of Aneurysm Aortic "
                   "Coarctation … Ann Thorac Surg 2001' 등. 비운다",
     },
+    "ART002051027": {
+        "rawFingerprint": "sha256:23e412b184ee785a",
+        "keep": {
+            "en": [
+                "Social network analysis",
+                "Korean Journal of Medical Education",
+                "Research trends",
+            ],
+        },
+        "reason": "키워드 목록에 'Keywords'라는 맨 라벨이 값으로 들어와 있다. "
+                  "자동 규칙(Keywords: 접두사 제거)은 콜론을 요구하므로 이 값은 걸리지 않는다 — "
+                  "콜론을 선택으로 두면 'Keyword extraction' 같은 정상 키워드의 첫 낱말이 "
+                  "잘려 나가기 때문이다. 나머지 3개는 정상이라 그대로 두고 라벨만 뺀다",
+    },
     "ART001224869": {
+        "rawFingerprint": "sha256:6dc8866a2fea5b80",
         "keep": {
             "en": [
                 "Attention deficit hyperactivity disorder (ADHD)",
@@ -171,16 +199,46 @@ KEYWORD_FIXES = {
 }
 
 
-def apply_keyword_fix(kci_id, keywords):
-    """KEYWORD_FIXES에 지목된 논문이면 손질한 키워드를, 아니면 받은 그대로 돌려준다."""
+def raw_fingerprint(raw):
+    """원본 키워드({ko, en})의 지문 — 값이 바뀌면 지문도 바뀐다.
+
+    긴 오염 문자열을 코드에 그대로 붙이면 읽기 어려워서 짧은 해시로 지목한다.
+    무엇이 들어 있었는지는 각 fix의 reason에 사람 말로 적어 둔다.
+    """
+    canonical = json.dumps(
+        {lang: list(raw.get(lang) or []) for lang in ("ko", "en")},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def apply_keyword_fix(kci_id, keywords, raw):
+    """지목된 논문이면 손질한 키워드를 돌려준다 — (키워드, stale 기록 또는 None).
+
+    **현재 원본이 등록된 지문과 같을 때만** 손질한다. 달라졌으면 KCI 쪽 데이터가 바뀐 것이므로
+    자동으로 덮어쓰지 않고 그대로 둔 채 stale 기록만 남긴다 (사람이 다시 판단할 몫이다).
+    """
     fix = KEYWORD_FIXES.get(kci_id)
     if not fix:
-        return keywords
+        return keywords, None
+
+    current = raw_fingerprint(raw)
+    expected = fix.get("rawFingerprint")
+    if current != expected:
+        return keywords, {
+            "kciId": kci_id,
+            "reason": "원본 키워드가 손질 판단 당시와 달라졌습니다 — 손대지 않았습니다",
+            "expectedFingerprint": expected,
+            "currentFingerprint": current,
+            "currentRaw": raw,
+            "fixReason": fix["reason"],
+        }
+
     if fix.get("clearAll"):
-        return {"ko": [], "en": []}
+        return {"ko": [], "en": []}, None
     keep = fix.get("keep", {})
     return {lang: list(keep[lang]) if lang in keep else list(keywords[lang])
-            for lang in ("ko", "en")}
+            for lang in ("ko", "en")}, None
 
 
 def split_packed(text):
@@ -199,13 +257,69 @@ def split_packed(text):
     return pieces or [text]
 
 
+# ---------------------------------------------------------------------------
+# upstream(KCI) 오염 정제 — 자동으로 손대는 것은 아래 두 가지뿐이다
+#
+# KCI의 keyword 필드 자체에 학술지 앞부속·본문 조각이 섞여 들어온 논문이 있다
+# (referenceInfo 문제가 아니다 — 원본 필드가 그렇게 저장돼 있다).
+# 일반화할 수 있고 위험이 낮은 두 가지만 자동으로 처리하고, 나머지(날짜·이메일·
+# 교신저자·참고문헌 조각)는 **지우지 않고** review.keywordSuspect에 기록만 한다.
+# ---------------------------------------------------------------------------
+
+# 규칙 2: 'Keywords:' 계열 접두사만 떼고 내용은 살린다.
+#   'Keywords : Breast neoplasms' → 'Breast neoplasms'
+# **콜론을 반드시 요구한다.** 콜론을 선택으로 두면 'Keyword extraction'처럼
+# keyword로 시작하는 멀쩡한 키워드에서 첫 낱말이 잘려 나간다 (실측 관문에서 확인).
+KEYWORD_LABEL_PREFIX = re.compile(r"^[\s.,;:]*key\s*words?\s*[:：]\s*", re.I)
+
+
+def sanitize_keyword(text):
+    """키워드 한 개를 정제한다. 버릴 값이면 None.
+
+    규칙 1 — 글자·숫자가 하나도 없는 값(구두점만)은 버린다: '.', ',' 등.
+      str.isalnum()은 한자·그리스문자도 글자로 인정한다. 실측에 守令·月暈 같은
+      한자 키워드가 18건 있어서, 라틴/한글만 글자로 보면 멀쩡한 값이 지워진다.
+    규칙 2 — 'Keywords:' 접두사만 떼어 낸다 (내용은 그대로 둔다).
+    """
+    if not any(ch.isalnum() for ch in text):
+        return None
+    stripped = KEYWORD_LABEL_PREFIX.sub("", text).strip()
+    return stripped or None
+
+
+# 자동으로 지우지 않고 사람에게 넘길 오염 신호. 지우기에는 판단이 필요한 것들이다.
+# (자동 규칙으로 없애려면 정밀도가 충분해야 하는데, 이 값들은 형태가 제각각이다)
+SUSPECT_PATTERNS = (
+    ("이메일", re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")),
+    # 콜론을 요구한다 — 'Revised version of the Korean …' 같은 정상 키워드를 피하기 위해서다
+    ("접수·게재일", re.compile(
+        r"(접\s*수(\s*일|\s*번호)?|게재\s*승인\s*일|수정본\s*접\s*수|received|accepted)\s*[:：]", re.I)),
+    ("교신저자·연락처", re.compile(
+        r"교신저자|통신저자|corresponding author|address for (reprints?|correspondence)"
+        r"|(tel|fax)\s*[.:]", re.I)),
+    ("참고문헌·본문 조각", re.compile(r"et al\.|(19|20)\d{2}\s*[;:]\s*\d+|서\s*론")),
+)
+
+
+def detect_suspects(keywords):
+    """정제 후에도 남은 오염 의심 값을 찾는다 — 기록만 하고 지우지 않는다."""
+    suspects = []
+    for lang in ("ko", "en"):
+        for value in keywords[lang]:
+            reasons = [name for name, pattern in SUSPECT_PATTERNS if pattern.search(value)]
+            if reasons:
+                suspects.append({"lang": lang, "value": value, "reasons": reasons})
+    return suspects
+
+
 def split_keywords(keywords, unpack=True):
     """한 리스트로 섞여 온 키워드를 한글/영문으로 나눈다 (순서 유지, 중복 제거).
 
     KCI는 언어 속성을 주지 않으므로 글자로 가른다 — 한글 음절이 하나라도 있으면 ko다.
     "COVID-19"·"HbA1c" → en, "K-MMSE 검사" → ko.
 
-    unpack=False면 뭉쳐 온 키워드를 쪼개지 않는다 — 원본을 keywordsRaw에 남길 때 쓴다.
+    unpack=False면 뭉쳐 온 키워드를 쪼개지 않고 정제도 하지 않는다
+    — 원본을 keywordsRaw에 그대로 남길 때 쓴다.
     """
     result = {"ko": [], "en": []}
     seen = {"ko": set(), "en": set()}
@@ -214,6 +328,11 @@ def split_keywords(keywords, unpack=True):
         if not text:
             continue
         for piece in (split_packed(text) if unpack else [text]):
+            if unpack:
+                # 정제는 최종 결과에만 적용한다 — keywordsRaw(unpack=False)는 원본 그대로 둔다
+                piece = sanitize_keyword(piece)
+                if not piece:
+                    continue
             lang = "ko" if _HANGUL_RE.search(piece) else "en"
             if piece in seen[lang]:
                 continue
@@ -229,7 +348,16 @@ def parse_detail(xml_bytes, kci_id):
     KCI가 오류 문구를 돌려주면 KciApiError (재시도해도 같은 결과다).
     """
     root = ET.fromstring(xml_bytes)      # 깨진 XML이면 ParseError → 호출한 쪽이 재시도
-    article = _article_info(root)
+    articles = _article_infos(root)
+
+    if len(articles) > 1:
+        # 상세 조회는 논문 1편을 묻는 것이다. 여러 개가 오면 첫 번째를 말없이 집을 게 아니라
+        # 형식 변경 신호로 보고 거부한다 (fetch_kci.parse_response도 같은 자리를 명시 처리한다).
+        raise fetch_kci.KciUnexpectedResponseError(
+            f"{kci_id}: 한 응답에 articleInfo가 {len(articles)}개입니다 "
+            f"(API 형식 변경 신호): {fetch_kci._snippet(xml_bytes)}"
+        )
+    article = articles[0] if articles else None
 
     if article is None:
         # 논문 정보가 없다 — '정상적인 0건'이라는 근거를 찾는다. 없으면 오류다 (fail-closed)
@@ -245,11 +373,15 @@ def parse_detail(xml_bytes, kci_id):
             f"(최상위 <{fetch_kci._local(root.tag)}>): {fetch_kci._snippet(xml_bytes)}"
         )
 
-    # 요청한 논문이 맞는지 확인한다 — 다른 논문의 상세를 얹으면 그대로 오귀속이다
+    # 요청한 논문이 맞는지 확인한다 — 다른 논문의 상세를 얹으면 그대로 오귀속이다.
+    # **식별자가 없으면 통과시키지 않는다.** 없는 것은 "확인 못 함"이지 "맞음"이 아니다.
+    # fetch_kci.parse_response도 article-id 누락을 형식 변경 신호로 보고 fail-closed 처리한다.
     returned_id = fetch_kci._attr(article, "article-id", "articleid")
-    if returned_id and returned_id != kci_id:
+    if returned_id != kci_id:
+        detail_text = (f"{returned_id} 응답이 왔습니다" if returned_id
+                       else "응답에 article-id가 없습니다 (API 형식 변경 신호)")
         raise fetch_kci.KciUnexpectedResponseError(
-            f"{kci_id}를 요청했는데 {returned_id} 응답이 왔습니다: {fetch_kci._snippet(xml_bytes)}"
+            f"{kci_id}를 요청했는데 {detail_text}: {fetch_kci._snippet(xml_bytes)}"
         )
 
     keywords = [node.text for node in fetch_kci._iter_by_tag(article, "keyword")]
@@ -269,7 +401,7 @@ def parse_detail(xml_bytes, kci_id):
         })
 
     raw = split_keywords(keywords, unpack=False)
-    final = apply_keyword_fix(kci_id, split_keywords(keywords))
+    final, stale = apply_keyword_fix(kci_id, split_keywords(keywords), raw)
     detail = {
         "keywords": final,
         "articleCategories": categories,     # "의약학 > 내과학" — KCI 원본 표기 그대로 둔다
@@ -280,15 +412,76 @@ def parse_detail(xml_bytes, kci_id):
         # 쪼갰거나 손질한 논문에만 원본을 남긴다 — 나중에 잘못 쪼갠 게 발견되면
         # 이 값으로 되돌릴 수 있다. 손대지 않은 논문에까지 넣으면 산출물만 커진다.
         detail["keywordsRaw"] = raw
+    if stale:
+        # 손질 대상인데 원본이 달라진 논문 — 덮어쓰지 않았다는 사실을 함께 들고 다닌다
+        detail["keywordFixStale"] = stale
     return detail
 
 
+def reprocess_detail(kci_id, detail):
+    """캐시에 저장된 상세를 **현재 규칙으로 다시 계산한다** (API 재호출 없이).
+
+    캐시에는 파싱이 끝난 값이 들어 있어서, 정제 규칙이나 KEYWORD_FIXES가 바뀌면
+    옛 결과가 그대로 남는다. 원본(keywordsRaw, 없으면 손대지 않았다는 뜻이므로 keywords)에서
+    다시 계산하면 재호출 없이 새 규칙을 전체에 적용할 수 있다.
+    """
+    raw = detail.get("keywordsRaw") or detail["keywords"]
+    flat = list(raw.get("ko") or []) + list(raw.get("en") or [])
+
+    rebuilt = dict(detail)
+    raw_split = split_keywords(flat, unpack=False)
+    final, stale = apply_keyword_fix(kci_id, split_keywords(flat), raw_split)
+    rebuilt["keywords"] = final
+    if raw_split != final:
+        rebuilt["keywordsRaw"] = raw_split
+    else:
+        rebuilt.pop("keywordsRaw", None)
+    if stale:
+        rebuilt["keywordFixStale"] = stale
+    else:
+        rebuilt.pop("keywordFixStale", None)
+    return rebuilt
+
+
+def reprocess_cache(details):
+    """캐시 전체를 현재 규칙으로 다시 계산하고, 바뀐 편수를 알린다."""
+    changed = 0
+    for kci_id, detail in list(details.items()):
+        rebuilt = reprocess_detail(kci_id, detail)
+        if rebuilt != detail:
+            details[kci_id] = rebuilt
+            changed += 1
+    if changed:
+        print(f"캐시 재처리: 현재 규칙으로 {changed}편의 키워드를 다시 계산했습니다 (API 재호출 없음)")
+    return changed
+
+
 def record_keyword_fixes(state, details):
-    """손질한 논문을 review.keywordFixes에 남긴다 — 조용히 사라지지 않게."""
-    entries = []
+    """손질·미적용·의심 값을 review에 남긴다 — 조용히 사라지거나 묻히지 않게.
+
+    - keywordFixes      : 실제로 손질한 논문
+    - keywordFixStale   : 지목은 돼 있으나 원본이 달라져 **손대지 않은** 논문 (사람이 재확인)
+    - keywordFixMissing : 지목한 논문이 수집 대상에 없어 **적용된 적이 없는** 항목
+    - keywordSuspect    : 자동 정제 뒤에도 남은 오염 의심 값 (지우지 않고 기록만)
+
+    missing을 따로 남기는 이유: 사람이 등록한 개입이 조용히 무효가 되면 안 된다.
+    논문이 산출물에서 빠졌거나 kciId를 잘못 적었을 때 이 목록으로 드러난다.
+    """
+    review = state.setdefault("review", {})
+
+    entries, stale, missing = [], [], []
     for kci_id, fix in KEYWORD_FIXES.items():
         detail = details.get(kci_id)
         if not detail:
+            missing.append({
+                "kciId": kci_id,
+                "reason": "지목한 논문이 수집 결과에 없어 손질이 적용되지 않았습니다 "
+                          "— kciId 오타이거나 그 논문이 더 이상 수집되지 않는 것입니다",
+                "fixReason": fix["reason"],
+            })
+            continue
+        if "keywordFixStale" in detail:
+            stale.append(detail["keywordFixStale"])
             continue
         entries.append({
             "kciId": kci_id,
@@ -296,8 +489,17 @@ def record_keyword_fixes(state, details):
             "before": detail.get("keywordsRaw"),
             "after": detail["keywords"],
         })
-    state.setdefault("review", {})["keywordFixes"] = entries
-    return entries
+    review["keywordFixes"] = entries
+    review["keywordFixStale"] = stale
+    review["keywordFixMissing"] = missing
+
+    suspects = []
+    for kci_id, detail in details.items():
+        found = detect_suspects(detail["keywords"])
+        if found:
+            suspects.append({"kciId": kci_id, "suspects": found})
+    review["keywordSuspect"] = suspects
+    return entries, stale, missing, suspects
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +634,10 @@ def main():
 
     cache = load_cache()
     details = cache["details"]
+    # 정제 규칙·KEYWORD_FIXES가 바뀌었을 수 있다 — 캐시를 현재 규칙으로 다시 계산한다.
+    # 원본(keywordsRaw)에서 계산하므로 API를 다시 부르지 않는다.
+    if reprocess_cache(details):
+        save_json(CACHE_PATH, cache)
     not_found = cache.setdefault("notFound", [])
     failed = cache.setdefault("failed", [])
 
@@ -481,11 +687,21 @@ def main():
             print(f"  → 중간 반영: {OUTPUT_PATH.name} ({index}/{len(todo)}편)")
 
     applied = merge_into_papers(state, details)
-    fixes = record_keyword_fixes(state, details)
+    fixes, stale, missing, suspects = record_keyword_fixes(state, details)
+    # 조회 실패도 산출물의 review에 남긴다 — 캐시에만 있으면 산출물만 보는 사람은 알 수 없다
+    state.setdefault("review", {})["detailFailed"] = list(failed)
     save_json(OUTPUT_PATH, state)
     print(f"\nkci_papers.json에 반영: 논문 항목 {applied}개 (사본 포함)")
     if fixes:
         print(f"오염 키워드 손질: {len(fixes)}편 (review.keywordFixes 참고)")
+    if stale:
+        print(f"손질 미적용(원본이 달라짐): {len(stale)}편 — review.keywordFixStale 확인 필요")
+    if missing:
+        print(f"손질 대상이 수집 결과에 없음: {len(missing)}편 "
+              f"({', '.join(m['kciId'] for m in missing)}) — review.keywordFixMissing 확인 필요")
+    if suspects:
+        print(f"오염 의심 값: {sum(len(x['suspects']) for x in suspects)}개"
+              f" / {len(suspects)}편 (review.keywordSuspect — 지우지 않고 기록만)")
     print_summary(details, not_found, failed, time.monotonic() - started, run_count)
 
 
