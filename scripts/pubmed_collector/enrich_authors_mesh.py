@@ -48,8 +48,9 @@ from pathlib import Path
 import requests
 
 # 기존 부품 재사용 (기존 파일은 수정하지 않는다 — 같은 폴더라 바로 import 가능)
-import build_all      # call_with_retry: 5xx·네트워크 예외를 5초→15초 간격으로 3회까지 재시도
-import fetch_one      # EFETCH_URL
+import build_all       # call_with_retry: 5xx·네트워크 예외를 5초→15초 간격으로 3회까지 재시도
+import citation_utils  # is_author_segment / is_author_token: 인용문 저자부 판별 (3단계와 공유)
+import fetch_one       # EFETCH_URL
 
 # ===== 실행 옵션 (실행 전 이 부분만 수정하면 됩니다) ============================
 LIMIT = None            # 개발·검증용: 입력 교수 목록 앞 N명만 처리 (None이면 전체)
@@ -197,6 +198,20 @@ def parse_article(article):
     return {"pmid": pmid, "meshTerms": mesh_terms, "authors": authors}
 
 
+def _describe_error(exc):
+    """예외를 기록용 한 줄로 요약한다 (HTTP 응답이 있으면 상태 코드, 없으면 예외 이름).
+
+    build_all에도 같은 이름의 비공개 함수가 있지만 그쪽을 부르지 않는다 —
+    build_all의 비공개 함수를 참조하면 그쪽이 바뀔 때 이 파일이 같이 깨진다
+    (2026-08-20에 _is_author_segment가 사라져 실제로 AttributeError로 죽었다).
+    네 줄짜리라 여기 따로 두는 편이 낫다.
+    """
+    response = getattr(exc, "response", None)
+    if response is not None:
+        return f"HTTP {response.status_code}"
+    return type(exc).__name__
+
+
 def fetch_details(pmids):
     """전체 PMID를 BATCH_SIZE씩 묶어 efetch로 재조회한다. 반환: {pmid: {meshTerms, authors}}.
 
@@ -216,7 +231,7 @@ def fetch_details(pmids):
         except (requests.exceptions.RequestException, ET.ParseError) as exc:
             # ParseError: PubMed가 HTTP 200으로 HTML 오류 페이지를 돌려줄 때 난다.
             # 잡지 않으면 묶음 하나 때문에 배치 전체가 중단된다.
-            print(f"  → 묶음 {index} 실패({build_all._describe_error(exc)}) — 건너뛰고 계속")
+            print(f"  → 묶음 {index} 실패({_describe_error(exc)}) — 건너뛰고 계속")
             continue
         for article in root.findall("PubmedArticle"):
             parsed = parse_article(article)
@@ -371,13 +386,13 @@ def merge_initials_only(candidates):
 def citation_author_keys(citation):
     """인용문 저자부에서 (성, 이니셜)을 뽑는다 — "Oh SM, Jeong H, …" → {("oh","SM"), …}.
 
-    저자부 판별은 3단계(build_all)의 규칙을 그대로 재사용한다. 제목·학술지 조각의
-    대문자 단어를 저자로 오인하지 않기 위해서다.
+    저자부 판별은 citation_utils의 규칙을 그대로 재사용한다 — 3단계(build_all)도 같은
+    모듈을 쓴다. 제목·학술지 조각의 대문자 단어를 저자로 오인하지 않기 위해서다.
     """
     text = re.sub(r"\s+", " ", citation or "").strip()
     keys = set()
     for segment in re.split(r"(?<=[.?!])\s+", text):
-        if not build_all._is_author_segment(segment):
+        if not citation_utils.is_author_segment(segment):
             continue
         # 성과 이니셜이 붙어 버린 원문 오타를 떼어 준다 — "YoonSJ" → "Yoon SJ".
         # (윤선중 교수 인용문 13건 중 5건이 실제로 이 모양이라 본인이 안 잡혔다)
@@ -387,7 +402,7 @@ def citation_author_keys(citation):
             token = token.strip().rstrip(".")
             if not token or token.lower() in {"et al", "and et al"}:
                 continue
-            if not build_all._is_author_token(token):
+            if not citation_utils.is_author_token(token):
                 continue
             words = token.split()
             if len(words) < 2:                      # 성만 있고 이니셜이 없으면 못 쓴다
