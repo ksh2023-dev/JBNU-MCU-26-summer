@@ -53,6 +53,26 @@ def test_no_results_is_empty_not_error():
     assert res.json()["total"] == 0
 
 
+def test_keywords_in_responses_are_english_only():
+    # 회의 결정(2026-08-21): 데이터는 한·영 보관, 응답(화면)의 keywords는 영문만.
+    # 샘플의 P-001은 keywords에 "심장 MRI"가 섞여 있다 — 로드 시 내부 필드로 옮겨져야 한다.
+    import re
+    hangul = re.compile(r"[가-힣]")
+    detail = client.get("/api/professors/P-001").json()
+    assert detail["keywords"], "키워드 자체가 사라지면 안 된다"
+    assert not any(hangul.search(k) for k in detail["keywords"])
+    cards = client.post("/api/professors/search", json={"query": ""}).json()["results"]
+    assert all(not hangul.search(k) for c in cards for k in c["keywords"])
+    # 내부 필드 keywordsKo가 응답에 새어 나가면 안 된다 (필드 집합은 계약 그대로)
+    assert "keywordsKo" not in detail
+
+
+def test_korean_query_matches_via_internal_keywords_ko():
+    # "부정맥"은 P-002의 keywordsKo(내부)에만 있다 — 응답엔 없어도 검색은 잡혀야 한다
+    res = client.post("/api/professors/search", json={"query": "부정맥"}).json()
+    assert [c["id"] for c in res["results"]] == ["P-002"]
+
+
 def test_favorite_ids_absent_means_no_filter():
     # favoriteIds 없음/null = "찜한 교수만 보기" 꺼짐 → 전체 검색
     res = client.post("/api/professors/search", json={"query": "", "filters": {}})

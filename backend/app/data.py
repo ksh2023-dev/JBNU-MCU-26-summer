@@ -5,10 +5,13 @@ Phase 2에서 SQLite로 옮기더라도 이 모듈의 함수 시그니처는 유
 """
 
 import json
+import re
 from functools import lru_cache
 
 from . import config
 from .schemas import ProfessorRecord
+
+_HAS_HANGUL = re.compile(r"[가-힣]")
 
 
 class Store:
@@ -31,7 +34,13 @@ class Store:
 def get_store() -> Store:
     raw = json.loads(config.DATA_FILE.read_text(encoding="utf-8"))
     professors = [ProfessorRecord.model_validate(p) for p in raw["professors"]]
-    # 원칙 1 방어선: pmid가 비어 있는 논문은 로드 단계에서 제거한다
     for p in professors:
+        # 원칙 1 방어선: pmid가 비어 있는 논문은 로드 단계에서 제거한다
         p.papers = [paper for paper in p.papers if paper.pmid and paper.pmid.strip()]
+        # 회의 결정(2026-08-21): 화면(응답)의 keywords는 영문만.
+        # 데이터 파일이 keywords에 한글을 섞어 오든 keywordsKo로 따로 주든,
+        # 여기서 한글은 전부 내부 keywords_ko로 옮겨 검색 매칭에만 쓴다.
+        korean = [k for k in p.keywords if _HAS_HANGUL.search(k)]
+        p.keywords = [k for k in p.keywords if not _HAS_HANGUL.search(k)]
+        p.keywords_ko = korean + [k for k in p.keywords_ko if k not in korean]
     return Store(professors, raw["collectedAt"])

@@ -9,6 +9,7 @@
 | `profile_image_collector/` | `fetch_image_urls.py` | 병원 프로필 페이지에서 사진 URL만 수집 | `data/output/profile_images.json` |
 | `pubmed_collector/` | `fetch_one.py` → `enrich_citations.py` → `build_all.py` | 논문 수집(1단계) → 인용수+대표 3편(2단계) → 243명 전체 파이프라인(3단계) | `data/output/professors_papers.json` 등 |
 | `kci_collector/` | `fetch_kci.py` | KCI(국내 학술지) 논문 수집 + PubMed 논문과의 중복 표시 | `data/output/kci_papers.json` |
+| `keyword_translator/` | `translate_keywords.py` | 영문 MeSH 키워드 → 한글 번역 (KOSTOM 사전 + KCI 수확 메모리) | `data/output/keywords_ko.json` |
 
 모든 스크립트 공통 원칙:
 
@@ -735,7 +736,7 @@ cron에 단계별 명령을 따로 걸면 앞 단계가 끝나기 전에 다음�
 순서 보장은 이 스크립트가 책임집니다. **반복은 cron의 몫이고, 이 파일은 1회 실행 묶음입니다.**
 표준 라이브러리만 쓰므로 수집 서버에 추가 설치가 필요 없습니다.
 
-## 실행 순서 (8단계)
+## 실행 순서 (9단계)
 
 | # | 단계 | 스크립트 | 주기 | 주요 출력 |
 | --- | --- | --- | --- | --- |
@@ -746,33 +747,37 @@ cron에 단계별 명령을 따로 걸면 앞 단계가 끝나기 전에 다음�
 | 5 | MeSH·영문명·이메일 보강 | `pubmed_collector/enrich_authors_mesh.py` | 주 1회 | `professors_enriched_meta.json` |
 | 6 | KCI 논문 수집 | `kci_collector/fetch_kci.py` | 주 1회 (키 없으면 자동 건너뜀) | `kci_papers.json` |
 | 7 | KCI 키워드 수집 | `kci_collector/fetch_kci_keywords.py` | 주 1회 (키 없으면 자동 건너뜀) | `kci_papers.json`에 덧씌움 |
-| 8 | 최종 조립 | `assembler/build_professors.py` | 주 1회 | `professors.json` · `professors_extra.json` |
+| 8 | 키워드 한글 번역 | `keyword_translator/translate_keywords.py` | 주 1회 (로컬 사전 조회, 몇 초) | `keywords_ko.json` |
+| 9 | 최종 조립 | `assembler/build_professors.py` | 주 1회 | `professors.json` · `professors_extra.json` |
 
-> 메모: **MeSH 한글화 단계가 추후 조립 직전에 추가될 예정**입니다. 스크립트가 아직 없어 단계로
-> 등록하지 않았습니다(등록하면 매 실행마다 `missing` 경고가 뜹니다). 들어오면 단계 번호를 밀고 등록합니다.
-
-3단계·8단계의 자세한 동작은 `specialty_collector/README.md`·`assembler/README.md`를 봅니다.
+3단계·8단계·9단계의 자세한 동작은 `specialty_collector/README.md`·`keyword_translator/README.md`·
+`assembler/README.md`를 봅니다.
 
 ## 단계 사이의 의존 관계
 
 - **[4] → [5]** — 5단계는 4단계 산출물 `professors_papers.json`을 입력으로 씁니다(없으면 `exit 1`).
 - **[6] → [7]** — 키워드 보강은 **전체 재수집이 아니라** 6단계가 만든 `kci_papers.json`의 `kciId`로
   상세(`articleDetail`)만 불러 같은 파일에 얹습니다. 그 파일이 없으면 `exit 1`로 끝납니다.
-- **[1]·[2]·[3]·[4]·[5] → [8]** — 조립기는 이 다섯 산출물을 `load_json`으로 그대로 엽니다.
+- **[5] → [8]** — 키워드 한글 번역은 5단계 산출물의 영문 MeSH 키워드를 번역 대상으로 읽습니다.
+  7단계까지 채워진 `kci_papers.json`이 있으면 한·영 키워드 쌍을 번역 메모리에 수확하므로
+  KCI 단계들 **뒤**에 둡니다 (수확은 보너스라 KCI가 건너뛰어도 사전만으로 정상 동작합니다).
+- **[1]·[2]·[3]·[4]·[5] → [9]** — 조립기는 이 다섯 산출물을 `load_json`으로 그대로 엽니다.
   하나라도 없으면 트레이스백을 뱉고 죽습니다.
-- **[6]은 8단계 산출물 `professors.json`을 수집 대상 명단으로 읽습니다(순환 의존).** 순서가 6 → 8이라
+  (`keywords_ko.json`은 조립기가 **아직 읽지 않습니다** — 한글 키워드를 `keywordsKo` 필드로
+  병합하는 부분이 조립기에 들어가면 선행 조건에도 추가합니다.)
+- **[6]은 9단계 산출물 `professors.json`을 수집 대상 명단으로 읽습니다(순환 의존).** 순서가 6 → 9라
   같은 회차에는 채워지지 않고 늘 **직전 회차**의 조립 결과를 기준으로 돕니다.
 
 **선행 산출물이 없는 단계는 `건너뜀(선행 산출물 없음)`으로 자동 제외됩니다** — 실패가 아니라
 '아직 차례가 아닌 것'으로 봅니다. 산출물이 하나도 없는 **새 서버의 최초 실행에서는 6·7단계가 건너뛰어지고**,
-그 회차의 8단계가 `professors.json`을 만들면 **다음 회차부터 저절로 실행**됩니다. 사람이 손댈 것은 없습니다.
+그 회차의 9단계가 `professors.json`을 만들면 **다음 회차부터 저절로 실행**됩니다. 사람이 손댈 것은 없습니다.
 
 단, **이번 실행의 앞 단계가 그 파일을 만들 예정이면 있는 것으로 칩니다.** 예를 들어
-`professors_papers.json`이 아직 없어도 같은 실행에서 4단계가 돌 예정이면 5·8단계는 정상 실행됩니다.
+`professors_papers.json`이 아직 없어도 같은 실행에서 4단계가 돌 예정이면 5·9단계는 정상 실행됩니다.
 어느 쪽이든 계획표(`--dry-run`)에 사유와 파일 이름이 그대로 찍힙니다.
 
 > 새 서버의 첫 회차는 `--include-roster`로 도는 것을 권합니다. 그러지 않으면 1단계 산출물
-> `roster_crawled.json`이 없어 8단계(최종 조립)까지 건너뛰어집니다.
+> `roster_crawled.json`이 없어 9단계(최종 조립)까지 건너뛰어집니다.
 
 ## 사용법
 
@@ -780,7 +785,7 @@ cron에 단계별 명령을 따로 걸면 앞 단계가 끝나기 전에 다음�
 파이썬(`sys.executable`)으로 호출되므로 **가상환경이 그대로 따라갑니다.**
 
 ```powershell
-# 기본: 주 1회 묶음 (2~8단계, 명단 크롤 제외)
+# 기본: 주 1회 묶음 (2~9단계, 명단 크롤 제외)
 python scripts/run_all.py
 
 # 월 1회: 명단 크롤까지 포함한 전체
@@ -808,7 +813,7 @@ python scripts/run_all.py --dry-run
    5단계는 확보한 PMID로 efetch만 다시 부르므로 OpenAlex 키가 필요 없습니다.
 2. `KCI_API_KEY`가 없으면 **6·7단계**를 `건너뜀(키없음)`으로 자동 제외합니다.
    (이 키는 IP에 묶여 있어 고정 IP 수집 서버에서만 동작합니다 — 계약 v6.4 7장)
-3. 선행 산출물이 필요한 단계(5·6·7·8)는 그 파일이 있는지 확인해, 없으면
+3. 선행 산출물이 필요한 단계(5·6·7·8·9)는 그 파일이 있는지 확인해, 없으면
    `건너뜀(선행 산출물 없음)`으로 자동 제외합니다.
 4. 각 단계 스크립트가 실제로 있는지 확인해 계획표로 출력합니다. 없으면 `건너뜀(missing)`.
 
@@ -883,7 +888,7 @@ if not api_key and ENV_PATH.exists():
 > 실제 등록은 수집 서버 세팅 단계에서 진행합니다 (아래는 양식).
 
 ```cron
-# 주 1회: 월요일 03:00 — 논문·사진·전문분야·KCI·조립
+# 주 1회: 월요일 03:00 — 논문·사진·전문분야·KCI·키워드 번역·조립
 0 3 * * 1  cd /path/to/repo && .venv/bin/python scripts/run_all.py >> data/output/logs/cron.log 2>&1
 # 월 1회: 매월 1일 04:00 — 명단 갱신 포함 전체
 0 4 1 * *  cd /path/to/repo && .venv/bin/python scripts/run_all.py --include-roster >> data/output/logs/cron.log 2>&1
@@ -912,7 +917,8 @@ if not api_key and ENV_PATH.exists():
 | 5 | MeSH·영문명·이메일 보강 | 위 3-4장 참고 |
 | 6 | KCI 논문 수집 | **이어서 진행** (위 4장 참고) |
 | 7 | KCI 키워드 수집 | **이어서 진행** — `_cache_kci_details.json` 캐시를 재사용하므로 이미 받은 상세는 다시 부르지 않습니다 |
-| 8 | 최종 조립 | 처음부터 다시 (앞 산출물을 읽어 합치는 단계라 빠릅니다) |
+| 8 | 키워드 한글 번역 | 처음부터 다시 — 로컬 사전 조회라 몇 초면 끝납니다 |
+| 9 | 최종 조립 | 처음부터 다시 (앞 산출물을 읽어 합치는 단계라 빠릅니다) |
 
 각 단계는 별도 프로세스로 돌기 때문에 한 단계가 죽어도 다른 단계의 산출물은 그대로 남습니다.
 기본 모드에서는 실패 시 즉시 중단하므로 **뒤 단계가 옛 데이터로 조립되는 일은 없습니다.**

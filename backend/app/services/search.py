@@ -26,7 +26,9 @@ def _score(professor: ProfessorDetail, tokens: list[str]) -> float:
         return 1.0
 
     fields = {
-        "keywords": [k.lower() for k in professor.keywords],
+        # 한글 키워드(keywords_ko)는 응답에는 안 나가지만 검색 매칭에는 함께 쓴다
+        # (회의 결정 2026-08-21: 화면은 영문만, 데이터·검색은 한·영 모두)
+        "keywords": [k.lower() for k in professor.keywords + professor.keywords_ko],
         "specialties": [s.lower() for s in professor.specialties],
         "papers": [p.title.lower() for p in professor.papers],
         "department": [professor.department.lower()],

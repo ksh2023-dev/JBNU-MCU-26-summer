@@ -1,5 +1,5 @@
 {
-  "_comment": "합성 샘플 데이터입니다. 실존 인물·논문이 아니며 개발/테스트 용도로만 사용합니다. 실데이터는 scripts/ 파이프라인으로 수집·검증 후 교체합니다. latestPaper는 내부 필드(API ③ 정렬용)로, 계약 응답에는 나가지 않습니다.",
+  "_comment": "합성 샘플 데이터입니다. 실존 인물·논문이 아니며 개발/테스트 용도로만 사용합니다. 실데이터는 scripts/ 파이프라인으로 수집·검증 후 교체합니다. latestPaper·keywordsKo는 내부 필드(각각 API ③ 정렬·한글 검색 매칭용)로, 계약 응답에는 나가지 않습니다. 응답의 keywords는 영문만 담습니다(2026-08-21 회의 결정) — keywords에 한글이 섞여 있으면 백엔드가 로드 시 keywordsKo로 옮깁니다(P-001의 '심장 MRI'가 그 경로의 예시).",
   "collectedAt": "2026-08-09",
   "professors": [
     {
@@ -29,6 +29,7 @@
       "labName": "심혈관생리연구실",
       "specialties": ["이온채널", "심근세포"],
       "keywords": ["ion channel", "electrophysiology", "cardiomyocyte", "arrhythmia"],
+      "keywordsKo": ["이온통로", "전기생리학", "심근세포", "부정맥"],
       "email": "seoyeon.lee@jbnu.ac.kr",
       "homepageUrl": "https://med.jbnu.ac.kr/physiology",
       "latestPaper": { "pmid": "90000004", "publishedAt": "2024-09-15" },

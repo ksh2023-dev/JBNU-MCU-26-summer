@@ -115,6 +115,11 @@ uvicorn app.main:app --reload --port 8000
 
 ## 계약 해석 메모 (팀 확인 필요 항목)
 
+- **keywords는 응답에 영문만** (2026-08-21 회의 결정): 데이터 파일은 한·영을 모두 보관하되
+  (`keywordsKo` 내부 필드, 또는 `keywords`에 섞여 있으면 로드 시 자동 분리), 응답의
+  `keywords`에는 영문만 담는다. 한글 키워드는 검색 매칭에만 쓰인다 — "부정맥" 검색은 잡히지만
+  카드·상세 화면에는 영문 키워드만 보인다. 프론트는 아무것도 거를 필요 없다.
+
 - **API ①의 HTTP 모양**: 계약은 요청 payload만 정의 → `POST /api/professors/search`로 구현. 프론트와 확정 필요.
 - **빈 질의(query: "")**: 점수를 만들 근거가 없으므로 `matchScore: null` + minScore 컷 미적용(원칙 2·3). 카드가 항상 점수를 가진다고 가정하지 말 것.
 - **우수 교수 카드의 matchScore**: 질의가 없으므로 `null`.

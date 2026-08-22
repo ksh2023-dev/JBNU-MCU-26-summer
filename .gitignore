@@ -13,3 +13,6 @@ __pycache__/
 #DB 자동화 수집 product
 data/output/
 venv/
+
+# KOSTOM 원본 엑셀(24MB) — 추출된 사전(scripts/keyword_translator/dictionary.json.gz)만 커밋한다
+data/KOSTOM/

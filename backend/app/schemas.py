@@ -65,11 +65,14 @@ class LatestPaper(ContractModel):
 class ProfessorRecord(ProfessorDetail):
     """저장용 레코드 = 상세(1-2) + 내부 필드.
 
-    계약 응답 모양이 아니다 — latestPaper는 응답에 나가면 안 되며,
+    계약 응답 모양이 아니다 — latestPaper·keywordsKo는 응답에 나가면 안 되며,
     라우터의 response_model(ProfessorDetail/ProfessorCard)이 걸러낸다.
     """
 
     latest_paper: LatestPaper | None = None
+    # 한글 키워드 — 회의 결정(2026-08-21): 데이터는 한·영 모두 보관하되 화면에는 영문만.
+    # 응답의 keywords에는 영문만 담고, 한글은 이 내부 필드에 두어 검색 매칭에만 쓴다.
+    keywords_ko: list[str] = []
 
 
 class SearchFilters(ContractModel):
