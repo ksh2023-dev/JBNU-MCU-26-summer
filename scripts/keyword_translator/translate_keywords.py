@@ -81,9 +81,16 @@ def collect_english_terms(node, found):
 def harvest_kci_pairs(memory):
     """KCI 산출물에서 한·영 키워드 쌍을 수확해 메모리에 더한다. 반환: 새로 배운 용어 수.
 
-    KCI 수집기의 정확한 모양이 확정되기 전이라, '같은 객체 안에 En/Ko로 끝나는 키 쌍이 있고
-    둘 다 같은 길이의 문자열 배열'인 경우만 쌍으로 인정한다. 모양이 다르면 조용히 0을 반환한다
-    — 수확은 보너스이지 이 단계의 성패가 아니다.
+    7단계(fetch_kci_keywords.py)가 논문마다 붙이는 실제 모양을 읽는다:
+        paper["keywords"] = {"ko": [...], "en": [...]}
+
+    주의 — ko/en은 KCI의 '언어 구분 없는 한 목록'을 한글 포함 여부로 가른 것이라
+    서로 정렬·대응이 보장되지 않는다 (언어별 중복 제거로 길이가 어긋날 수도 있다).
+    그래서 **두 목록의 길이가 같을 때만** 같은 순번끼리 쌍으로 인정한다
+    (저자들이 번역쌍을 같은 순서로 나열하는 관행에 기댄 추정 — 길이가 다르면
+    잘못 짝지을 위험이 커서 그 논문은 통째로 건너뛴다. 지어내지 않는다, 원칙 2).
+    keywordsRaw(쪼개기 전 원본 보존용)는 수확 대상이 아니다.
+    모양이 다르거나 파일이 없으면 조용히 0 — 수확은 보너스이지 이 단계의 성패가 아니다.
     """
     if not KCI_PATH.exists():
         return 0
@@ -100,19 +107,25 @@ def harvest_kci_pairs(memory):
         nonlocal learned
         if isinstance(node, dict):
             for key, value in node.items():
-                if key.lower().endswith("en") and isinstance(value, list):
-                    ko_key = key[:-2] + ("Ko" if key[-2:] == "En" else "ko")
-                    ko_value = node.get(ko_key)
+                if (
+                    key == "keywords"
+                    and isinstance(value, dict)
+                    and isinstance(value.get("ko"), list)
+                    and isinstance(value.get("en"), list)
+                ):
+                    ko_list, en_list = value["ko"], value["en"]
                     if (
-                        isinstance(ko_value, list)
-                        and len(ko_value) == len(value)
-                        and all(isinstance(x, str) for x in value + ko_value)
+                        ko_list and len(ko_list) == len(en_list)
+                        and all(isinstance(x, str) for x in ko_list + en_list)
                     ):
-                        for en, ko in zip(value, ko_value):
+                        for en, ko in zip(en_list, ko_list):
                             en_key, ko = normalize(en), ko.strip()
                             if en_key and ko and HAS_HANGUL.search(ko) and en_key not in memory:
                                 memory[en_key] = [ko]
                                 learned += 1
+                    continue   # keywords 밑으로 더 내려갈 것 없음
+                if key == "keywordsRaw":
+                    continue   # 쪼개기 전 원본 — 쌍 근거가 더 약하므로 쓰지 않는다
                 visit(value)
         elif isinstance(node, list):
             for item in node:

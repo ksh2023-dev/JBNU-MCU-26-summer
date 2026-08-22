@@ -10,13 +10,14 @@ v6.4 개정분 (2026-08-16 회의)
     또 계약 v6.4에는 latestPaper의 스키마가 정의되어 있지 않다(내부 필드라는 언급뿐) —
     아래 EMIT_LATEST_PAPER_KCI_ID 주석 참고.
 
-입력 (재료 6종)
+입력 (재료 7종)
   data/output/roster_crawled.json            의대 명단 (교수구분·교실·직위·전화·동명이인 메모·diff)
   data/input/professor_pages.json            병원 교수 프로필 URL (= 병원 명단 243명, homepageUrl 재료)
   data/output/profile_images.json            프로필 사진 URL
   data/output/specialties.json               전문진료분야
   data/output/professors_papers.json         대표 논문 3편 · latestPaper · allPapers
   data/output/professors_enriched_meta.json  영문명 · MeSH 키워드 후보 · 이메일
+  data/output/keywords_ko.json               영문 키워드 → 한글 번역 (8단계 산출물 · 없으면 keywordsKo 전원 [])
 
 관리 파일 (사람이 관리, 커밋 대상 — 구조 설명은 data/input/README.md)
   data/input/manual_overrides.json           수동 검수 대장 (사람 확정이 자동 수집을 이긴다)
@@ -64,6 +65,14 @@ PAPERS_LIMIT = 3                    # 대표 논문 수 (계약 1-2: 최신 1편
 # False로 두어 칸을 빼도 백엔드 적재는 실패하지 않는다 (대신 응답에 labName: null이 그대로 붙는다).
 EMIT_LABNAME = False
 
+# 한글 키워드(keywordsKo)를 내보낼지 — 2026-08-21 회의: 화면은 영문만, 검색은 한·영 모두.
+# keywordsKo는 latestPaper처럼 **백엔드 내부 필드**다: 응답(계약)에는 나가지 않고
+# 검색 매칭에만 쓰인다 (backend/app/schemas.py ProfessorRecord.keywords_ko 참고).
+# 값은 8단계(keyword_translator) 산출물 keywords_ko.json에서 그 교수의 keywords를
+# 그대로 조회한 번역 변형들이다 — 조립기가 번역을 만들지 않는다 (원칙 2·4).
+# 파일이 없으면(번역 단계를 건너뛴 실행) 전원 []로 두고 시작 로그에 남긴다.
+EMIT_KEYWORDS_KO = True
+
 # 최신 논문이 KCI 전용(pmid 없음·kciId만 있음)일 때 latestPaper를 kciId로 내보낼지.
 # 기본값 False인 이유 두 가지 — 어느 쪽도 조립기가 임의로 정할 수 없다.
 #  (1) 계약 v6.4에 latestPaper 스키마가 없다. 내부 필드라 응답에 나가지 않는다는 언급뿐이라
@@ -95,6 +104,7 @@ IMAGES_PATH = ROOT / "data" / "output" / "profile_images.json"
 SPECIALTIES_PATH = ROOT / "data" / "output" / "specialties.json"
 PAPERS_PATH = ROOT / "data" / "output" / "professors_papers.json"
 META_PATH = ROOT / "data" / "output" / "professors_enriched_meta.json"
+KEYWORDS_KO_PATH = ROOT / "data" / "output" / "keywords_ko.json"
 
 OVERRIDES_PATH = ROOT / "data" / "input" / "manual_overrides.json"
 REGISTRY_PATH = ROOT / "data" / "input" / "id_registry.json"
@@ -363,6 +373,11 @@ def new_record(name, department, department_source, professor_type, professor_ty
     record.update({
         "specialties": [],
         "keywords": [],
+    })
+    if EMIT_KEYWORDS_KO:
+        # 백엔드 내부 필드 — 응답에는 안 나가고 검색 매칭에만 쓰인다 (상수 주석 참고)
+        record["keywordsKo"] = []
+    record.update({
         "email": None,
         "homepageUrl": None,
         "latestPaper": None,       # 백엔드 내부 필드 (API ③ 정렬용, 응답에는 안 나감)
@@ -415,6 +430,12 @@ def fill_from_sources(record, sources, review):
 
     meta_entry = sources["meta"].get(name) or {}
     record["keywords"] = list(meta_entry.get("keywordsCandidate") or [])   # 영어 MeSH 후보(필터판) 그대로
+    if EMIT_KEYWORDS_KO:
+        # 8단계 번역표에서 이 교수의 keywords를 그대로 조회해 한글 변형을 전부 붙인다.
+        # 영문 원본은 대체하지 않는다(추가만). 번역표에 없는 키워드는 그냥 빠진다 — 지어내지 않는다.
+        translations = sources["keywordsKo"]
+        korean = [v for k in record["keywords"] for v in (translations.get(k) or [])]
+        record["keywordsKo"] = list(dict.fromkeys(korean))   # 순서 유지 중복 제거
     record["email"] = meta_entry.get("email") or None
     record["_extra"]["nameEn"] = meta_entry.get("nameEn") or None
     record["_extra"]["nameEnVariants"] = list(meta_entry.get("nameEnVariants") or [])
@@ -779,6 +800,11 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
     allowed = set(load_json(SAMPLE_PATH)["professors"][0].keys())
     if not EMIT_LABNAME:
         allowed.discard("labName")
+    # keywordsKo는 latestPaper와 같은 지위의 백엔드 내부 필드 — 샘플 1번 교수에는 없어서 명시한다
+    if EMIT_KEYWORDS_KO:
+        allowed.add("keywordsKo")
+    else:
+        allowed.discard("keywordsKo")
     overrides_checked = check_overrides_applied(records, overrides, problems, review, out_of_scope)
 
     # 동명이인에게 남의 확정값이 통과되지 않도록 대상 지정(department)까지 키에 넣는다
@@ -865,6 +891,12 @@ def check_integrity(contract_records, records, sources, review, overrides, out_o
                 - set((sources["meta"].get(name) or {}).get("keywordsCandidate") or []) \
                 - confirmed_keywords:
             problems.append(f"{name}: 원본에 없는 키워드가 들어 있다")
+        if EMIT_KEYWORDS_KO:
+            # 원칙 4 — keywordsKo는 이 교수의 keywords를 번역표에서 조회한 값만 담을 수 있다
+            translated = {v for k in record["keywords"]
+                          for v in (sources["keywordsKo"].get(k) or [])}
+            if set(record.get("keywordsKo") or []) - translated:
+                problems.append(f"{name}: 번역표에 없는 한글 키워드가 들어 있다")
         for field, source_value in (("profileImageUrl", sources["images"].get(name)),
                                     ("email", (sources["meta"].get(name) or {}).get("email")),
                                     ("homepageUrl", sources["pages"].get(name))):
@@ -907,7 +939,7 @@ def report(contract_records, review, excluded_dental, hospital_total,
     total = len(contract_records) or 1
     print("    필드별 채움율")
     for field in ("profileImageUrl", "professorType", "department", "specialties",
-                  "keywords", "email", "homepageUrl", "papers", "latestPaper", "labName"):
+                  "keywords", "keywordsKo", "email", "homepageUrl", "papers", "latestPaper", "labName"):
         if not contract_records or field not in contract_records[0]:
             continue  # labName은 v6.4에서 삭제 (EMIT_LABNAME=False면 칸 자체가 없다)
         filled = sum(1 for r in contract_records if r[field] not in (None, [], ""))
@@ -953,6 +985,15 @@ def main():
     meta_file = load_json(META_PATH)
     overrides = load_json(OVERRIDES_PATH) if OVERRIDES_PATH.exists() else {"overrides": []}
 
+    # 8단계 산출물 — 없어도 조립은 계속한다 (keywordsKo만 전원 []가 된다). 조용히 넘어가지 않게 로그를 남긴다
+    keywords_ko_translations = {}
+    if EMIT_KEYWORDS_KO:
+        if KEYWORDS_KO_PATH.exists():
+            keywords_ko_translations = load_json(KEYWORDS_KO_PATH).get("translations") or {}
+        else:
+            print(f"[경고] 번역표가 없다: {KEYWORDS_KO_PATH} — keywordsKo를 전원 빈 배열로 둔다 "
+                  "(8단계 키워드 한글 번역을 먼저 실행할 것)")
+
     sources = {
         "roster": roster,
         "pages": pages,
@@ -960,6 +1001,7 @@ def main():
         "specialties": specialties_file["specialties"],
         "papers": papers_file["professors"],
         "meta": meta_file["professors"],
+        "keywordsKo": keywords_ko_translations,
     }
     source_dates = {
         "roster_crawled": roster["collectedAt"],

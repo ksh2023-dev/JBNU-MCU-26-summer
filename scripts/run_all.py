@@ -94,10 +94,10 @@ STEPS = [
     Step(8, "키워드 한글 번역", "scripts/keyword_translator/translate_keywords.py",
          requires_files=("data/output/professors_enriched_meta.json",),
          produces="data/output/keywords_ko.json"),
-    # 조립기는 아래 5종과 data/input/professor_pages.json을 load_json으로 바로 연다 —
+    # 조립기는 아래 6종과 data/input/professor_pages.json을 load_json으로 바로 연다 —
     # 하나라도 없으면 트레이스백을 뱉고 죽는다. (professor_pages.json은 저장소에 커밋된
-    # 파일이라 항상 있으므로 조건에서 뺐다.
-    #  keywords_ko.json은 조립기가 아직 읽지 않아 조건에 넣지 않았다 — 통합되면 추가한다)
+    # 파일이라 항상 있으므로 조건에서 뺐다. keywords_ko.json만은 조립기가 없어도 경고 후
+    # 진행하지만(keywordsKo 전원 []), 번역이 빠진 조립이 조용히 배포되지 않도록 조건에 둔다)
     Step(9, "최종 조립", "scripts/assembler/build_professors.py",
          requires_files=(
              "data/output/roster_crawled.json",
@@ -105,6 +105,7 @@ STEPS = [
              "data/output/specialties.json",
              "data/output/professors_papers.json",
              "data/output/professors_enriched_meta.json",
+             "data/output/keywords_ko.json",
          ),
          produces="data/output/professors.json"),
 ]
@@ -239,9 +240,15 @@ def parse_args(argv=None):
         "--force-unlock", action="store_true",
         help="남아 있는 락 파일을 강제로 회수하고 실행 (도는 실행이 없는 것이 확실할 때만)",
     )
+    parser.add_argument(
+        "--limit", type=int, metavar="N",
+        help="각 수집 단계를 앞 N명만 처리 (파이프라인 스모크 테스트용 — 산출물이 N명짜리로 줄어드니 운영 실행에는 쓰지 말 것)",
+    )
     args = parser.parse_args(argv)
     if args.only and args.skip:
         parser.error("--only와 --skip은 함께 쓸 수 없습니다 (실행 대상이 모호해집니다)")
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit은 1 이상이어야 합니다")
     return args
 
 
@@ -733,9 +740,14 @@ def main(argv=None):
         logger.write(f"파이썬: {sys.executable}")
         if args.dry_run:
             logger.write("모드: --dry-run (실제 실행 없이 계획만 출력)")
+        if args.limit:
+            logger.write(f"모드: --limit {args.limit} (각 수집 단계 앞 {args.limit}명만 — 스모크 테스트)")
 
         env_path = Path(args.env_file).expanduser().resolve() if args.env_file else ROOT / ".env"
         env_values = read_env_values(env_path)
+        if args.limit:
+            # 하위 단계 스크립트의 LIMIT 상수를 환경변수로 덮는다 (각 스크립트 상단 참고)
+            env_values["PIPELINE_LIMIT"] = str(args.limit)
 
         # 계획을 먼저 세운다 — 어떤 단계가 실제로 도는지 알아야 어떤 키가 필수인지 판단할 수 있다
         plan, missing_inputs = build_plan(args, env_values)

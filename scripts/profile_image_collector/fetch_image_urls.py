@@ -16,11 +16,17 @@
 # ── 설정 ─────────────────────────────────────────────────────────
 # 개발·테스트용 인원 제한: None이면 전체(243명), 숫자(예: 10)를 넣으면 앞 N명만 처리
 LIMIT = None
+# run_all.py --limit N 스모크 테스트용 — 환경변수가 있으면 위 LIMIT보다 우선한다
+import os as _os
+if _os.environ.get("PIPELINE_LIMIT"):
+    LIMIT = int(_os.environ["PIPELINE_LIMIT"])
 
+
+import hashlib
 import json
 import time
 import urllib.request
-from datetime import date
+from datetime import date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin
@@ -29,6 +35,12 @@ from urllib.parse import urljoin
 ROOT = Path(__file__).resolve().parents[2]
 INPUT_PATH = ROOT / "data" / "input" / "professor_pages.json"
 OUTPUT_PATH = ROOT / "data" / "output" / "profile_images.json"
+
+# 페이지 HTML 캐시 — 2단계(이 스크립트)와 3단계(전문진료분야)가 '같은' 프로필 페이지를 읽는다.
+# 여기서 가져온 HTML을 남겨 두면 3단계가 재요청 없이 몇 초 만에 끝난다 (병원 서버 부하도 절반).
+# 캐시는 산출물이 아니라 부산물이므로 data/output 밑(.gitignore 대상)에 두고, 지워도 무해하다.
+SAVE_PAGE_CACHE = True
+CACHE_DIR = ROOT / "data" / "output" / "_cache_profile_pages"
 
 SLEEP_SECONDS = 0.5      # 서버 예절: 호출 사이 대기 시간
 TIMEOUT_SECONDS = 15     # 응답을 기다리는 최대 시간
@@ -86,6 +98,38 @@ def extract_photo_url(html, page_url, name):
     return None  # 사진이 없거나 placeholder뿐 → null (원칙 2 — 지어내지 않는다)
 
 
+def load_cache_index():
+    """캐시 색인을 읽는다. 없거나 깨졌으면 빈 색인 — 캐시는 없어도 되는 부산물이다."""
+    try:
+        with open(CACHE_DIR / "index.json", encoding="utf-8") as f:
+            return json.load(f).get("pages") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_page_cache(cache_index, name, url, html):
+    """가져온 HTML을 캐시에 남긴다. 실패해도 수집은 계속한다 (부산물이 본업을 막지 않게)."""
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        file_name = hashlib.md5(name.encode("utf-8")).hexdigest() + ".html"
+        (CACHE_DIR / file_name).write_text(html, encoding="utf-8")
+        cache_index[name] = {
+            "url": url,
+            "fetchedAt": datetime.now().isoformat(timespec="seconds"),
+            "file": file_name,
+        }
+        # 한 명 끝날 때마다 색인을 저장한다 — 중간에 끊겨도 그때까지의 캐시는 유효하다
+        (CACHE_DIR / "index.json").write_text(
+            json.dumps({
+                "_comment": "프로필 페이지 HTML 캐시 색인 — 2단계가 쓰고 3단계가 읽는다. 지워도 무해(재조회).",
+                "pages": cache_index,
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as error:
+        print(f"    캐시 저장 실패(무시하고 계속): {error}")
+
+
 def main():
     # 1) 입력 파일 읽기
     with open(INPUT_PATH, encoding="utf-8") as f:
@@ -100,10 +144,14 @@ def main():
 
     images = {}
     success = no_photo = failed = 0
+    # 기존 색인 위에 덮어쓴다 — LIMIT 실행이 다른 교수의 캐시를 지우지 않게
+    cache_index = load_cache_index() if SAVE_PAGE_CACHE else {}
 
     # 2) 한 명씩 페이지를 가져와 사진 URL 추출
     for index, (name, url) in enumerate(items, start=1):
         html = fetch_html(url)
+        if html is not None and SAVE_PAGE_CACHE:
+            save_page_cache(cache_index, name, url, html)
         if html is None:
             images[name] = None  # 요청 실패 → null로 기록하고 계속 진행
             failed += 1

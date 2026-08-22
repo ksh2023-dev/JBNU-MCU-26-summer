@@ -42,6 +42,11 @@ import requests
 LIST_URL_KO = "https://med.jbnu.ac.kr/med/12619/subview.do"   # 교수소개(교실/교수) 허브
 # LIST_URL_EN 없음 — 영문판에는 교수 명단이 없어 이번 범위에서 제외 (파일 상단 설명 참고)
 LIMIT = None                 # 개발용: 숫자면 앞 N명만 수집하고 중단
+# run_all.py --limit N 스모크 테스트용 — 환경변수가 있으면 위 LIMIT보다 우선한다
+import os as _os
+if _os.environ.get("PIPELINE_LIMIT"):
+    LIMIT = int(_os.environ["PIPELINE_LIMIT"])
+
 # ==============================================================================
 
 # 예절: 운영 중인 학교 홈페이지 — 요청 사이 0.5초, 비동기·병렬 없이 순차 수집

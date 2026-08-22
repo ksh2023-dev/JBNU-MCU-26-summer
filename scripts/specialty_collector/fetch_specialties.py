@@ -33,12 +33,18 @@
 # ── 설정 ─────────────────────────────────────────────────────────
 # 개발·테스트용 인원 제한: None이면 전체(243명), 숫자(예: 10)를 넣으면 앞 N명만 처리
 LIMIT = None
+# run_all.py --limit N 스모크 테스트용 — 환경변수가 있으면 위 LIMIT보다 우선한다
+import os as _os
+if _os.environ.get("PIPELINE_LIMIT"):
+    LIMIT = int(_os.environ["PIPELINE_LIMIT"])
 
+
+import hashlib
 import json
 import re
 import time
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -47,6 +53,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 INPUT_PATH = ROOT / "data" / "input" / "professor_pages.json"
 OUTPUT_PATH = ROOT / "data" / "output" / "specialties.json"
+
+# 페이지 HTML 캐시 — 2단계(프로필 사진)가 '같은' 프로필 페이지를 먼저 읽고 남긴 HTML을 재사용한다.
+# 파이프라인에서 2단계 직후에 돌면 재요청 없이 몇 초 만에 끝난다 (병원 서버 부하도 절반).
+# 신선도 한도를 넘긴 캐시는 쓰지 않는다 — 오래된 페이지로 전문진료분야를 갱신하는 일을 막는다.
+# 캐시에 없거나 오래된 교수만 직접 요청하고, 그 HTML은 캐시에 다시 남긴다.
+USE_PAGE_CACHE = True
+CACHE_MAX_AGE_HOURS = 24
+CACHE_DIR = ROOT / "data" / "output" / "_cache_profile_pages"
 
 SLEEP_SECONDS = 0.5      # 서버 예절: 호출 사이 대기 시간 (운영 중인 병원 서버 → 병렬 금지)
 TIMEOUT_SECONDS = 15     # 응답을 기다리는 최대 시간
@@ -196,6 +210,54 @@ def extract_specialties(html):
     return raw_text, specialties
 
 
+def load_cache_index():
+    """캐시 색인을 읽는다. 없거나 깨졌으면 빈 색인 — 캐시는 없어도 되는 부산물이다."""
+    try:
+        with open(CACHE_DIR / "index.json", encoding="utf-8") as f:
+            return json.load(f).get("pages") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def cached_html(cache_index, name, url):
+    """캐시에서 이 교수의 최신 HTML을 꺼낸다. 못 쓰는 캐시(URL 다름·오래됨·파일 없음)면 None."""
+    entry = cache_index.get(name)
+    if not entry or entry.get("url") != url:
+        return None
+    try:
+        fetched_at = datetime.fromisoformat(entry.get("fetchedAt") or "")
+    except ValueError:
+        return None
+    if datetime.now() - fetched_at > timedelta(hours=CACHE_MAX_AGE_HOURS):
+        return None  # 신선도 초과 — 오래된 페이지로 갱신하지 않는다
+    try:
+        return (CACHE_DIR / entry["file"]).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def save_page_cache(cache_index, name, url, html):
+    """직접 가져온 HTML도 캐시에 남긴다. 실패해도 수집은 계속한다."""
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        file_name = hashlib.md5(name.encode("utf-8")).hexdigest() + ".html"
+        (CACHE_DIR / file_name).write_text(html, encoding="utf-8")
+        cache_index[name] = {
+            "url": url,
+            "fetchedAt": datetime.now().isoformat(timespec="seconds"),
+            "file": file_name,
+        }
+        (CACHE_DIR / "index.json").write_text(
+            json.dumps({
+                "_comment": "프로필 페이지 HTML 캐시 색인 — 2단계가 쓰고 3단계가 읽는다. 지워도 무해(재조회).",
+                "pages": cache_index,
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as error:
+        print(f"    캐시 저장 실패(무시하고 계속): {error}")
+
+
 def main():
     # 1) 입력 파일 읽기
     with open(INPUT_PATH, encoding="utf-8") as f:
@@ -206,14 +268,24 @@ def main():
         items = items[:LIMIT]  # 개발·테스트용으로 앞 N명만
 
     total = len(items)
-    print(f"수집 시작: {total}명 처리 (입력 전체 {len(pages)}명, LIMIT={LIMIT})")
+    cache_index = load_cache_index() if USE_PAGE_CACHE else {}
+    print(f"수집 시작: {total}명 처리 (입력 전체 {len(pages)}명, LIMIT={LIMIT}, "
+          f"페이지 캐시 {len(cache_index)}건 보유)")
 
     specialties_result = {}
-    collected = empty = failed = 0
+    collected = empty = failed = cache_hits = 0
 
-    # 2) 한 명씩 페이지를 가져와 전문진료분야 추출
+    # 2) 한 명씩 페이지를 확보(캐시 → 직접 요청)해 전문진료분야 추출
     for index, (name, url) in enumerate(items, start=1):
-        html = fetch_html(url)
+        html = cached_html(cache_index, name, url) if USE_PAGE_CACHE else None
+        from_cache = html is not None
+        if from_cache:
+            cache_hits += 1
+        else:
+            html = fetch_html(url)
+            if html is not None and USE_PAGE_CACHE:
+                save_page_cache(cache_index, name, url, html)
+
         if html is None:
             specialties_result[name] = {"raw": None, "specialties": []}
             failed += 1
@@ -228,10 +300,11 @@ def main():
 
         # 10명 단위 진행 상황 출력
         if index % 10 == 0:
-            print(f"  진행: {index}/{total} (수집 {collected} / 빈 값 {empty} / 요청 실패 {failed})")
+            print(f"  진행: {index}/{total} (수집 {collected} / 빈 값 {empty} / 요청 실패 {failed} "
+                  f"/ 캐시 재사용 {cache_hits})")
 
-        # 서버 예절: 마지막 호출 뒤에는 기다릴 필요 없음
-        if index < total:
+        # 서버 예절: 실제로 서버를 부른 경우에만 기다린다 (캐시 재사용은 대기 불필요)
+        if not from_cache and index < total:
             time.sleep(SLEEP_SECONDS)
 
     # 3) 결과 저장 (계약의 collectedAt 형식 "YYYY-MM-DD"와 동일)
@@ -246,7 +319,8 @@ def main():
 
     # 4) 종료 통계
     print("=" * 60)
-    print(f"완료: 수집 {collected} / 빈 값 {empty} / 요청 실패 {failed}  (총 {total}명)")
+    print(f"완료: 수집 {collected} / 빈 값 {empty} / 요청 실패 {failed}  (총 {total}명, "
+          f"캐시 재사용 {cache_hits} / 직접 요청 {total - cache_hits})")
     print(f"저장 위치: {OUTPUT_PATH}")
 
 

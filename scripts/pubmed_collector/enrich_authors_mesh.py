@@ -53,6 +53,11 @@ import fetch_one      # EFETCH_URL
 
 # ===== 실행 옵션 (실행 전 이 부분만 수정하면 됩니다) ============================
 LIMIT = None            # 개발·검증용: 입력 교수 목록 앞 N명만 처리 (None이면 전체)
+# run_all.py --limit N 스모크 테스트용 — 환경변수가 있으면 위 LIMIT보다 우선한다
+import os as _os
+if _os.environ.get("PIPELINE_LIMIT"):
+    LIMIT = int(_os.environ["PIPELINE_LIMIT"])
+
 # ==============================================================================
 
 # efetch 한 번에 보낼 PMID 수 — NCBI 권장 상한(200) 그대로. 878편이면 5묶음이다.

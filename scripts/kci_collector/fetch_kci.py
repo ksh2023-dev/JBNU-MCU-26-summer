@@ -60,6 +60,11 @@ import requests
 # ===== 실행 옵션 (실행 전 이 부분만 수정하면 됩니다) ============================
 FORCE_REFRESH = False        # True면 저장된 결과를 무시하고 전부 다시 수집
 LIMIT = None                 # 개발·검증용: 대상 명단 앞 N명만 처리 (None이면 전체)
+# run_all.py --limit N 스모크 테스트용 — 환경변수가 있으면 위 LIMIT보다 우선한다
+import os as _os
+if _os.environ.get("PIPELINE_LIMIT"):
+    LIMIT = int(_os.environ["PIPELINE_LIMIT"])
+
 USE_AFFILIATION_PARAM = False  # True면 검색에 affiliation 파라미터도 함께 보낸다 (아래 설명)
 # ==============================================================================
 
