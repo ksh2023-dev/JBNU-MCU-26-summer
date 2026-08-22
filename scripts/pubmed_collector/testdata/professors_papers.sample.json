@@ -1,0 +1,153 @@
+{
+  "_comment": [
+    "test_build_all.py 전용 표본이다. 실제 산출물(data/output/professors_papers.json)은",
+    "git에 올라가지 않으므로, 새로 clone한 저장소에서도 테스트가 돌게 하려고 만들었다.",
+    "",
+    "검증에 필요한 최소한만 담는다:",
+    "  · journalMismatch에 걸렸지만 채택은 막지 않은 논문 3편 (학술지 개명 2 · 원문 오타 1)",
+    "  · 한글 제목이라 PubMed 검색을 건너뛴 인용문 2건과, 그 교수의 정상 논문",
+    "",
+    "교수 이름은 익명(교수A~교수D)으로 바꿨다. 실명·이메일은 담지 않는다.",
+    "PMID·제목·학술지·연도는 PubMed 공개 서지 정보라 원본 그대로 두었다 —",
+    "테스트가 '실제로 이런 표기 차이가 있다'를 고정하는 것이 목적이기 때문이다."
+  ],
+  "collectedAt": "2026-08-21",
+  "professors": {
+    "교수A": {
+      "papers": [],
+      "latestPaper": null,
+      "allPapers": [
+        {
+          "pmid": "22779071",
+          "title": "MYC rearrangement involving a novel non-immunoglobulin chromosomal locus in precursor B-cell acute lymphoblastic leukemia.",
+          "journal": "Annals of laboratory medicine",
+          "year": 2012,
+          "publishedAt": "2012-07-01",
+          "citedByCount": 3
+        }
+      ],
+      "stats": {
+        "cited": 1,
+        "sourceEntries": 1,
+        "collected": 1,
+        "notFound": 0
+      }
+    },
+    "교수B": {
+      "papers": [],
+      "latestPaper": null,
+      "allPapers": [
+        {
+          "pmid": "24471041",
+          "title": "Correction of post-traumatic anterior open bite by injection of botulinum toxin type A into the anterior belly of the digastric muscle: case report",
+          "journal": "Journal of the Korean Association of Oral and Maxillofacial Surgeons",
+          "year": 2013,
+          "publishedAt": "2013-02-01",
+          "citedByCount": 5
+        },
+        {
+          "pmid": "36732943",
+          "title": "Blue Light Inhibits Proliferation of Metastatic Cancer Cells by Regulating Mitochondrial Function",
+          "journal": "Photochemistry and photobiology",
+          "year": 2023,
+          "publishedAt": "2023-02-02",
+          "citedByCount": 2
+        }
+      ],
+      "stats": {
+        "cited": 2,
+        "sourceEntries": 2,
+        "collected": 2,
+        "notFound": 0
+      }
+    },
+    "교수C": {
+      "papers": [],
+      "latestPaper": null,
+      "allPapers": [
+        {
+          "pmid": "38660095",
+          "title": "Clinical approaches for poststroke seizure: a review.",
+          "journal": "Frontiers in neurology",
+          "year": 2024,
+          "publishedAt": "2024-04-15",
+          "citedByCount": 15
+        }
+      ],
+      "stats": {
+        "cited": 2,
+        "sourceEntries": 3,
+        "collected": 1,
+        "notFound": 1,
+        "koreanSkipped": 1
+      }
+    },
+    "교수D": {
+      "papers": [],
+      "latestPaper": null,
+      "allPapers": [],
+      "stats": {
+        "cited": 0,
+        "sourceEntries": 1,
+        "collected": 0,
+        "notFound": 0,
+        "koreanSkipped": 1
+      }
+    }
+  },
+  "review": {
+    "noPapers": [],
+    "parseFailed": [],
+    "notFound": [],
+    "ambiguous": [],
+    "journalMismatch": [
+      {
+        "professor": "교수A",
+        "pmid": "22779071",
+        "why": "학술지 다름",
+        "citedTitle": "MYC rearrangement involving a novel non-immunoglobulin chromosomal locus in precursor B-cell acute lymphoblastic leukemia",
+        "citedJournal": "Korean J Lab Med",
+        "citedYear": 2012,
+        "recordTitle": "MYC rearrangement involving a novel non-immunoglobulin chromosomal locus in precursor B-cell acute lymphoblastic leukemia.",
+        "recordJournal": "Annals of laboratory medicine",
+        "recordYear": 2012
+      },
+      {
+        "professor": "교수B",
+        "pmid": "24471041",
+        "why": "학술지 다름",
+        "citedTitle": "Correction of post-traumatic anterior open bite by injection of botulinum toxin type A into the anterior belly of the digastric muscle: case report",
+        "citedJournal": "J Korean Assoc Maxillofac Plast Reconstr Surg",
+        "citedYear": 2013,
+        "recordTitle": "Correction of post-traumatic anterior open bite by injection of botulinum toxin type A into the anterior belly of the digastric muscle: case report",
+        "recordJournal": "Journal of the Korean Association of Oral and Maxillofacial Surgeons",
+        "recordYear": 2013
+      },
+      {
+        "professor": "교수C",
+        "pmid": "38660095",
+        "why": "학술지 다름",
+        "citedTitle": "Clinical approaches for poststroke seizure",
+        "citedJournal": "Front Nutr",
+        "citedYear": 2024,
+        "recordTitle": "Clinical approaches for poststroke seizure: a review.",
+        "recordJournal": "Frontiers in neurology",
+        "recordYear": 2024
+      }
+    ],
+    "manualExcluded": [],
+    "koreanTitleSkipped": [
+      {
+        "professor": "교수C",
+        "title": "대상포진 Up-to-Date",
+        "hangulRatio": 0.33
+      },
+      {
+        "professor": "교수D",
+        "title": "일차의료용 근거기반 만성폐쇄성폐질환(COPD) 임상진료지침, 대한의학회, 질병관리본부",
+        "hangulRatio": 0.89
+      }
+    ],
+    "fetchFailed": []
+  }
+}
