@@ -121,10 +121,17 @@ function ProfessorDetailPage() {
 
   /* ---------- 4) 정상 화면 ---------- */
 
-  // 논문은 pmid 또는 kciId 중 최소 하나를 가진다. (계약 v6.4 1-2)
+  // 논문은 pmid 또는 kciId 중 최소 하나를 가진다. (계약 v6.5 1-2)
   // 둘 다 없는 논문은 응답에 오지 않지만, 만약 들어오면 화면에서 뺀다. (원칙 1)
   // pmid 만 보고 거르면 kciId 만 있는 국내 논문이 통째로 사라진다.
   const papers = professor.papers.filter((paper) => paper.pmid || paper.kciId)
+
+  // 두 카드 모두 비면 감싸는 2단 wrapper 까지 그리지 않는다.
+  // 빈 div 는 .detail-page (CSS 34-38행: flex column · gap 20px) 의 flex item 으로
+  // 세어져 20px 여백이 한 번 생긴다. (.detail-columns 자신의 gap 은 자식이 0개면
+  // 여백을 만들지 않으므로 근거가 아니다)
+  const hasSpecialties = professor.specialties.length > 0
+  const hasKeywords = professor.keywords.length > 0
 
   return (
     <div className="detail-page">
@@ -219,43 +226,43 @@ function ProfessorDetailPage() {
         </div>
       </section>
 
-      <div className="detail-columns">
-        {/*
-          연구 분야 — 계약 v6.4 4장: specialties 가 빈 배열이면 "해당 영역 표시 생략".
-          "정보 없음"을 띄우지 않고 카드 자체를 그리지 않습니다.
-          (한쪽만 남으면 CSS 의 :only-child 규칙이 가로 전체를 쓰게 합니다)
-        */}
-        {professor.specialties.length > 0 && (
-          <section className="detail-card">
-            <h3 className="detail-section-title">연구 분야</h3>
-            <ul className="detail-specialties">
-              {professor.specialties.map((specialty) => (
-                <li key={specialty}>{specialty}</li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/*
-          연구 키워드 — 계약 v6.4 는 "화면 미표시"로 바뀌었지만,
-          노출 유지 여부를 팀에 다시 논의 요청한 상태라 기존 UI 를 그대로 둡니다.
-          (PR #26 리뷰 4번 — 팀 결정 후 반영)
-        */}
-        <section className="detail-card">
-          <h3 className="detail-section-title">연구 키워드</h3>
-          {professor.keywords.length > 0 ? (
-            <ul className="detail-keywords">
-              {professor.keywords.map((keyword) => (
-                <li key={keyword} className="detail-pill">
-                  {keyword}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="detail-empty">{NO_DATA}</p>
+      {(hasSpecialties || hasKeywords) && (
+        <div className="detail-columns">
+          {/*
+            연구 분야 — 계약 v6.5 4장: specialties 가 빈 배열이면 "해당 영역 표시 생략".
+            "정보 없음"을 띄우지 않고 카드 자체를 그리지 않습니다.
+            (한쪽만 남으면 CSS 의 :only-child 규칙이 가로 전체를 쓰게 합니다)
+          */}
+          {hasSpecialties && (
+            <section className="detail-card">
+              <h3 className="detail-section-title">연구 분야</h3>
+              <ul className="detail-specialties">
+                {professor.specialties.map((specialty) => (
+                  <li key={specialty}>{specialty}</li>
+                ))}
+              </ul>
+            </section>
           )}
-        </section>
-      </div>
+
+          {/*
+            연구 키워드 — 계약 v6.5 4장(L967): keywords 가 빈 배열이면 "해당 영역 표시 생략".
+            "정보 없음"을 띄우지 않고 카드 자체를 그리지 않습니다.
+            v6.5 는 상세에서 전체를 표시합니다 (L919 · L1001 — v6.4 의 "미표시"를 대체).
+          */}
+          {hasKeywords && (
+            <section className="detail-card">
+              <h3 className="detail-section-title">연구 키워드</h3>
+              <ul className="detail-keywords">
+                {professor.keywords.map((keyword) => (
+                  <li key={keyword} className="detail-pill">
+                    {keyword}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
 
       {/* 대표 논문 */}
       <section className="detail-card">
@@ -279,25 +286,36 @@ function ProfessorDetailPage() {
                 </div>
 
                 {/*
-                  원문 링크 (계약 v6.4 3장)
-                    pmid 있음                → PubMed. 둘 다 있어도 PubMed 를 우선한다
-                    pmid 없고 kciId 만 있음  → KCI 논문 페이지
+                  원문 링크 (계약 v6.5 3장 · L928-938)
+                    1순위  pmid 있음                → PubMed "PubMed 보기"
+                    2순위  pmid 가 null 이고 kciId  → KCI    "KCI 보기"
+                    3순위  둘 다 null               → 버튼을 그리지 않는다
 
-                  KCI 주소 형식은 아직 백엔드와 최종 확인 전이라, 지금은 주소를
-                  지어내지 않고 버튼을 그리지 않는다. 형식이 확정되면 여기에
-                  kciId 분기를 한 줄 추가하면 된다. (원칙 2 — 없는 값을 만들지 않는다)
+                  둘 다 있으면 pmid 를 우선한다. 이는 버튼 하나를 고르는 규칙일 뿐이고,
+                  응답은 두 식별자를 모두 담는다. (계약 L940)
+                  식별자는 화면에 표시하지 않고 링크 생성에만 쓴다. (계약 L935)
                 */}
-                {paper.pmid && (
+                {paper.pmid ? (
                   <a
                     className="detail-button"
-                    href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`}
+                    href={`https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(paper.pmid)}/`}
                     target="_blank"
                     rel="noreferrer"
                   >
                     PubMed 보기
                     <ExternalLinkIcon />
                   </a>
-                )}
+                ) : paper.kciId ? (
+                  <a
+                    className="detail-button"
+                    href={`https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=${encodeURIComponent(paper.kciId)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    KCI 보기
+                    <ExternalLinkIcon />
+                  </a>
+                ) : null}
               </li>
             ))}
           </ol>
